@@ -1,10 +1,7 @@
-import requests
+from config import BASE_URL, API_KEY, AGENT_ID, PRINCIPAL_ID
 
-# API Configuration
-BASE_URL = "https://router.fis.aliyuncs.com/finx"
-API_KEY = "dk_FUqIymLPV4FN1qXGN8SjCAOw283ywNWa"
-AGENT_ID = "854633199433059505"
-PRINCIPAL_ID = "854639243835752719"
+import requests
+import json
 
 
 # PI System Prompt
@@ -25,27 +22,6 @@ Alternative queries: [3-4 variations using different terminology]
 Key terms: [5-10 individual keywords relevant to this topic]
 """
 
-def create_principal():
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
-    }
-
-    body = {
-    "principalName": "auto-scientist-user"
-}
-
-    print("Sending body:", body)
-
-    response = requests.post(
-        f"{BASE_URL}/api/principal/create",
-        headers=headers,
-        json=body
-    )
-
-    print("Status code:", response.status_code)
-    print("Response:", response.json())
-
 def get_response(request_id):
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -59,7 +35,6 @@ def get_response(request_id):
         stream=True
     )
 
-    import json
     full_response = ""
 
     for line in response.iter_lines():
