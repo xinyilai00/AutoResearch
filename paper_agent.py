@@ -501,7 +501,7 @@ def run_agent(args: argparse.Namespace) -> Path:
     write(output_dir / "best.md", draft)
 
     print("Generating visual manifest...")
-    write(output_dir / "figures" / "visual_manifest_final.md", generate_visual_manifest(model, draft, config))
+    #write(output_dir / "figures" / "visual_manifest_final.md", generate_visual_manifest(model, draft, config))
 
     return output_dir
 
