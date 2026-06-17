@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import requests
 import json
 import os
 import re
 import textwrap
 import time
-import urllib.error
-import urllib.request
-from urllib.parse import urlencode
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -140,9 +138,7 @@ class AICompatibleModel(ChatModel):
         )
         response.raise_for_status()
 
-        data = response.json()
-        request_id = data["data"]["requestId"]
-
+        request_id = response.json()["data"]["requestId"]
         return self._read_stream(request_id)
 
     def _read_stream(self, request_id: str) -> str:
@@ -164,17 +160,12 @@ class AICompatibleModel(ChatModel):
 
         full_response = ""
 
-        for line in response.iter_lines():
-            if not line:
-                continue
-
-            decoded = line.decode("utf-8", errors="replace")
-
-            if not decoded.startswith("data:"):
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
                 continue
 
             try:
-                data = json.loads(decoded[5:])
+                data = json.loads(line[5:])
             except json.JSONDecodeError:
                 continue
 
@@ -184,12 +175,14 @@ class AICompatibleModel(ChatModel):
                 full_response += data.get("data", {}).get("text", "")
 
             if event_type in {
+                "TEXT_END",
                 "MESSAGE_COMPLETED",
                 "RUN_COMPLETED",
                 "DONE",
                 "COMPLETED",
             }:
-                break
+                if full_response.strip():
+                    break
 
         if not full_response.strip():
             raise RuntimeError("Agent stream ended without returning text.")
@@ -344,11 +337,13 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
         except ImportError as exc:
             raise SystemExit("Could not import pi_agent.py. Put it next to paper_agent.py.") from exc
 
-        stage_inputs["pi"] = run_pi_agent(
-            args.prompt,
-            Path(args.out) / "stage_outputs" / "pi_output.md",
-        )
+        pi_result = run_pi_agent(args.prompt)
+        stage_inputs["pi"] = pi_result
 
+        pi_path = Path(args.out) / "stage_outputs" / "pi_output.md"
+        pi_path.parent.mkdir(parents=True, exist_ok=True)
+        pi_path.write_text(pi_result.rstrip() + "\n", encoding="utf-8")
+        
     cli_inputs = {
         "pi": args.pi_output,
         "part1_literature": args.part1_literature,
