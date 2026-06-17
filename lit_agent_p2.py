@@ -1,5 +1,4 @@
 from config import BASE_URL, API_KEY, AGENT_ID, PRINCIPAL_ID
-from citation_verifier import verify_citations
 
 import requests
 import json
@@ -264,6 +263,12 @@ def get_response(request_id: str) -> str:
                         full_response += data.get("data", {}).get("text", "")
                 except:
                     pass
+    
+    for i in range(1, len("RELEVANT METHODOLOGIES")):
+        if full_response.startswith("RELEVANT METHODOLOGIES"[i:]):
+            full_response = "RELEVANT METHODOLOGIES"[:i] + full_response
+            break
+
     return full_response
 
 
@@ -296,7 +301,7 @@ def run_deep_literature_agent(papers_text: str, research_question: str) -> str:
 # MAIN
 # ─────────────────────────────────────────────
 
-def run_deep_literature_stage(research_question: str) -> tuple[str, dict]:
+def run_deep_literature_stage(research_question: str) -> str:
     print("\n[Deep Literature Agent] Searching for targeted papers...")
     papers = run_deep_searches(research_question)
 
@@ -304,14 +309,11 @@ def run_deep_literature_stage(research_question: str) -> tuple[str, dict]:
     papers_text = format_papers_for_llm(papers)
     result = run_deep_literature_agent(papers_text, research_question)
 
-    citation_report = verify_citations(result, research_question)
-
-    return result, citation_report
+    return result
 
 
 if __name__ == "__main__":
     sample_question = "Can a machine learning model trained on publicly available wearable sensor data accurately predict next-day athletic performance decrements in individual athletes?"
-    result, citation_report = run_deep_literature_stage(sample_question)
+    result = run_deep_literature_stage(sample_question)
     print("\n--- Deep Literature Agent Output ---")
     print(result)
-    print(f"\n[Citations] Verified: {len(citation_report['verified'])} | Unverified: {len(citation_report['unverified'])} | Hallucinated: {len(citation_report['hallucinated'])}")

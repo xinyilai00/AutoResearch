@@ -290,6 +290,7 @@ def get_response(request_id: str) -> str:
         params={"requestId": request_id},
         stream=True
     )
+
     full_response = ""
     for line in response.iter_lines():
         if line:
@@ -302,9 +303,10 @@ def get_response(request_id: str) -> str:
                 except:
                     pass
 
-    # Fix truncated start
-    if full_response and not full_response.startswith("S"):
-        full_response = "SUMMARY OF EXISTING WORK:" + full_response[full_response.find("\n"):]
+    for i in range(1, len("SUMMARY OF EXISTING WORK")):
+        if full_response.startswith("SUMMARY OF EXISTING WORK"[i:]):
+            full_response = "SUMMARY OF EXISTING WORK"[:i] + full_response
+            break
 
     return full_response
 

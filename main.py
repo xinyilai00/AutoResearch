@@ -3,12 +3,9 @@ from pathlib import Path
 from paper_agent import parse_args as parse_paper_args
 from paper_agent import run_agent as run_paper_agent
 from lit_agent_p1 import run_literature_stage
-<<<<<<< Updated upstream
+from lit_agent_p2 import run_deep_literature_stage
 from pi_agent import run_pi_agent
 from review_agent import run_review_from_file
-=======
-from lit_agent_p2 import run_deep_literature_stage
->>>>>>> Stashed changes
 
 def parse_research_questions(lit_output: str) -> list[str]:
     questions = []
@@ -97,8 +94,17 @@ def main():
     if "| Gap addressed:" in selected_question:
         selected_question = selected_question.split("| Gap addressed:")[0].strip()
     print(f"\nSelected research question:\n{selected_question}")
-<<<<<<< Updated upstream
     selected_question_path = write_text(stage_dir / "selected_question.md", selected_question)
+
+    # PART 2
+    print("\n--- Deep Literature Agent (Part 2) ---")
+    try:
+        deep_lit_output = run_deep_literature_stage(selected_question)
+        print(deep_lit_output)
+        deep_lit_path = write_text(stage_dir / "deep_literature_output.md", deep_lit_output)
+    except Exception as exc:
+        print(f"Deep literature failed; using placeholder. Reason: {exc}")
+        deep_lit_path = write_text(stage_dir / "deep_literature_output.md", "Deep literature placeholder.")
 
     proposal_path = write_text(
         stage_dir / "proposal_output.md",
@@ -109,7 +115,6 @@ def main():
         "Experiment placeholder: experiment execution and results are pending. Do not report completed findings.",
     )
 
-    # PART 2
     print("\n--- Paper Agent ---")
     paper_args = parse_paper_args(
         [
@@ -130,7 +135,7 @@ def main():
             "--iterations",
             "0",
             "--max-tokens",
-            "3000",
+            "14000",
         ]
     )
     final_dir = run_paper_agent(paper_args)
@@ -146,15 +151,6 @@ def main():
         print(f"Review failed; paper draft is still available. Reason: {exc}")
 
     print(f"\nDone. Final draft: {final_paper}")
-=======
-    print("\n--- Deep Literature Agent (Part 2) ---")
-    deep_lit_output, citation_report = run_deep_literature_stage(selected_question)
-    print(deep_lit_output)
-    print(f"\n[Citations] Verified: {len(citation_report['verified'])} | Unverified: {len(citation_report['unverified'])} | Hallucinated: {len(citation_report['hallucinated'])}")
-    # Proposal agent goes here
-
-    
->>>>>>> Stashed changes
 
 if __name__ == "__main__":
     main()
