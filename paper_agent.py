@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import requests
 import json
 import os
 import re
 import textwrap
 import time
-import urllib.error
-import urllib.request
-from urllib.parse import urlencode
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -117,6 +115,8 @@ class AICompatibleModel(ChatModel):
             raise ValueError("PRINCIPAL_ID is not set")
 
     def complete(self, system: str, user: str, *, temperature: float, max_tokens: int) -> str:
+        import requests
+
         del temperature, max_tokens
 
         headers = {
@@ -130,79 +130,59 @@ class AICompatibleModel(ChatModel):
             "userInput": f"{system}\n\n{user}",
         }
 
-        request = urllib.request.Request(
+        response = requests.post(
             f"{self.base_url}/api/agent/run/async",
-            data=json.dumps(body).encode("utf-8"),
             headers=headers,
-            method="POST",
+            json=body,
+            timeout=180,
         )
+        response.raise_for_status()
 
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                result = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Agent request failed with HTTP {exc.code}: {body_text}") from exc
-
-        request_id = result["data"]["requestId"]
+        request_id = response.json()["data"]["requestId"]
         return self._read_stream(request_id)
 
     def _read_stream(self, request_id: str) -> str:
-        from urllib.parse import urlencode
-        import socket
+        import requests
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "X-Principal-Id": self.principal_id,
         }
 
-        query = urlencode({"requestId": request_id})
-        request = urllib.request.Request(
-            f"{self.base_url}/api/agent/run/stream?{query}",
+        response = requests.get(
+            f"{self.base_url}/api/agent/run/stream",
             headers=headers,
-            method="GET",
+            params={"requestId": request_id},
+            stream=True,
+            timeout=(30, 300),
         )
+        response.raise_for_status()
 
         full_response = ""
 
-        try:
-            with urllib.request.urlopen(request, timeout=300) as response:
-                while True:
-                    try:
-                        raw_line = response.readline()
-                    except socket.timeout:
-                        if full_response.strip():
-                            print("Stream timed out after partial response; continuing with partial text.")
-                            return full_response.strip()
-                        raise RuntimeError("Agent stream timed out before returning any text.")
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
 
-                    if not raw_line:
-                        break
+            try:
+                data = json.loads(line[5:])
+            except json.JSONDecodeError:
+                continue
 
-                    line = raw_line.decode("utf-8", errors="replace").strip()
+            event_type = data.get("eventType")
 
-                    if not line.startswith("data:"):
-                        continue
+            if event_type in {"TEXT_START", "TEXT_DELTA"}:
+                full_response += data.get("data", {}).get("text", "")
 
-                    try:
-                        data = json.loads(line[5:])
-                    except json.JSONDecodeError:
-                        continue
-
-                    if data.get("eventType") == "TEXT_DELTA":
-                        full_response += data.get("data", {}).get("text", "")
-
-                    if data.get("eventType") in {"RUN_COMPLETED", "DONE", "COMPLETED"}:
-                        break
-
-        except urllib.error.HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Agent stream failed with HTTP {exc.code}: {body_text}") from exc
-        except urllib.error.URLError as exc:
-            if full_response.strip():
-                print("Stream connection failed after partial response; continuing with partial text.")
-                return full_response.strip()
-            raise RuntimeError(f"Agent stream failed before returning text: {exc}") from exc
+            if event_type in {
+                "TEXT_END",
+                "MESSAGE_COMPLETED",
+                "RUN_COMPLETED",
+                "DONE",
+                "COMPLETED",
+            }:
+                if full_response.strip():
+                    break
 
         if not full_response.strip():
             raise RuntimeError("Agent stream ended without returning text.")
@@ -357,11 +337,13 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
         except ImportError as exc:
             raise SystemExit("Could not import pi_agent.py. Put it next to paper_agent.py.") from exc
 
-        stage_inputs["pi"] = run_pi_agent(
-            args.prompt,
-            Path(args.out) / "stage_outputs" / "pi_output.md",
-        )
+        pi_result = run_pi_agent(args.prompt)
+        stage_inputs["pi"] = pi_result
 
+        pi_path = Path(args.out) / "stage_outputs" / "pi_output.md"
+        pi_path.parent.mkdir(parents=True, exist_ok=True)
+        pi_path.write_text(pi_result.rstrip() + "\n", encoding="utf-8")
+        
     cli_inputs = {
         "pi": args.pi_output,
         "part1_literature": args.part1_literature,
