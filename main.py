@@ -144,9 +144,9 @@ def main():
 
     print("\n--- Review Agent ---")
     try:
-        run_review_from_file(final_paper, final_dir / "review")
-        print(f"Reviewed draft: {final_dir / 'review' / 'reviewed_draft.md'}")
-        print(f"Identified weaknesses: {final_dir / 'review' / 'identified_weaknesses.md'}")
+        review_dir = run_review_from_file(final_paper, final_dir / "review")
+        print(f"Reviewed draft: {review_dir / 'reviewed_draft.md'}")
+        print(f"Remaining weaknesses: {review_dir / 'remaining_weaknesses.md'}")
     except Exception as exc:
         print(f"Review failed; paper draft is still available. Reason: {exc}")
 

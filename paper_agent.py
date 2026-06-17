@@ -6,9 +6,8 @@ import os
 import re
 import textwrap
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from config import AGENT_ID, API_KEY, BASE_URL, PRINCIPAL_ID
 
@@ -27,6 +26,7 @@ STAGE_PLACEHOLDERS = {
     "citations": "Citations stage is not implemented yet. Use TODO references only; do not fabricate bibliographic records.",
 }
 
+
 PAPER_REQUIREMENTS = """
 Write a complete academic research paper of at least 4,000 words.
 
@@ -38,7 +38,8 @@ Required sections, in order:
 5. Results
 6. Discussion
 7. Conclusion
-8. References
+8. Figure Generation Notes
+9. References
 
 Rules:
 - Do not fabricate citations, datasets, statistics, experiments, or results.
@@ -47,50 +48,16 @@ Rules:
 - Use verified citations only when provided.
 - Include graph, table, workflow diagram, and picture references where useful.
 - For each visual, include caption, data source/provenance, and generation prompt.
-- End with a "Figure Generation Notes" subsection before References.
+- Output only the paper. Do not narrate your intent or mention PDF generation.
 """
 
 
 @dataclass
 class AgentConfig:
     model: str
-    iterations: int
     output_dir: Path
     temperature: float
     max_tokens: int
-    review_agents: list[str]
-    quality_threshold: int
-    pivot_threshold: int
-    max_pivots: int
-    memory_path: Path
-
-
-@dataclass
-class ReviewScore:
-    novelty: int
-    correctness: int
-    evidence: int
-    clarity: int
-    reproducibility: int
-
-    @property
-    def total(self) -> int:
-        return self.novelty + self.correctness + self.evidence + self.clarity + self.reproducibility
-
-
-@dataclass
-class Review:
-    score: ReviewScore
-    strengths: list[str]
-    weaknesses: list[str]
-    revision_plan: list[str]
-
-
-@dataclass
-class Decision:
-    action: str
-    reason: str
-    score_total: int
 
 
 class ChatModel:
@@ -121,7 +88,6 @@ class AICompatibleModel(ChatModel):
             "Authorization": f"Bearer {self.api_key}",
             "X-Principal-Id": self.principal_id,
         }
-
         body = {
             "agentId": self.agent_id,
             "userInput": f"{system}\n\n{user}",
@@ -137,7 +103,6 @@ class AICompatibleModel(ChatModel):
                     timeout=180,
                 )
                 response.raise_for_status()
-
                 request_id = response.json()["data"]["requestId"]
                 return self._read_stream(request_id)
             except requests.exceptions.RequestException as exc:
@@ -151,7 +116,7 @@ class AICompatibleModel(ChatModel):
                 if attempt < 3:
                     time.sleep(5 * attempt)
 
-        print(f"Paper API unavailable; using local fallback for this step. Reason: {last_error}")
+        print(f"Paper API unavailable; using local fallback. Reason: {last_error}")
         return TemplateFallbackModel().complete(system, user, temperature=temperature, max_tokens=max_tokens)
 
     def _read_stream(self, request_id: str) -> str:
@@ -161,7 +126,6 @@ class AICompatibleModel(ChatModel):
             "Authorization": f"Bearer {self.api_key}",
             "X-Principal-Id": self.principal_id,
         }
-
         response = requests.get(
             f"{self.base_url}/api/agent/run/stream",
             headers=headers,
@@ -172,57 +136,29 @@ class AICompatibleModel(ChatModel):
         response.raise_for_status()
 
         full_response = ""
-
         for line in response.iter_lines(decode_unicode=True):
             if not line or not line.startswith("data:"):
                 continue
-
             try:
                 data = json.loads(line[5:])
             except json.JSONDecodeError:
                 continue
 
             event_type = data.get("eventType")
-
             if event_type in {"TEXT_START", "TEXT_DELTA"}:
                 full_response += data.get("data", {}).get("text", "")
-
-            if event_type in {
-                "TEXT_END",
-                "MESSAGE_COMPLETED",
-                "RUN_COMPLETED",
-                "DONE",
-                "COMPLETED",
-            }:
+            if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
                 if full_response.strip():
                     break
 
         if not full_response.strip():
             raise RuntimeError("Agent stream ended without returning text.")
-
         return full_response.strip()
+
 
 class TemplateFallbackModel(ChatModel):
     def complete(self, system: str, user: str, *, temperature: float, max_tokens: int) -> str:
-        del system, temperature, max_tokens
-
-        if "Return JSON" in user:
-            return json.dumps(
-                {
-                    "novelty": 2,
-                    "correctness": 2,
-                    "evidence": 1,
-                    "clarity": 3,
-                    "reproducibility": 1,
-                    "strengths": ["The draft has a recognizable structure."],
-                    "weaknesses": ["Evidence and citations are placeholders."],
-                    "revision_plan": ["Replace placeholders with real stage outputs."],
-                }
-            )
-
-        if "visual artifact manifest" in user.lower():
-            return fallback_visual_manifest()
-
+        del system, user, temperature, max_tokens
         return fallback_paper()
 
 
@@ -230,35 +166,35 @@ def fallback_paper() -> str:
     return """# Provisional Research Paper Draft
 
 ## Abstract
-This is a provisional paper draft generated without live API output or complete upstream stage artifacts. The paper structure is present, but literature claims, citations, experiments, and results must be replaced with verified outputs from the full pipeline.
+This is a provisional research paper draft generated without a successful live paper-generation API response. The draft preserves the required paper structure and marks missing evidence as pending rather than inventing citations, datasets, experiments, or results.
 
 ## Introduction
-The topic is treated as provisional. The PI, Literature, Proposal, Experiment, and Citations stages should provide the evidence needed to turn this into a submission-ready paper.
+The research topic is treated as provisional until the upstream PI, Literature, Proposal, Experiment, and Citations stages provide complete evidence. The purpose of this draft is to verify that the Paper stage can produce a structured manuscript from available stage inputs.
 
 ![Workflow overview](figures/figure_01_workflow.png)
 
 ## Review
-The literature review is pending. This section should synthesize verified prior work, debates, methods, datasets, and gaps once the Literature stage is available.
+The literature review is pending or incomplete. A submission-ready paper should synthesize verified prior work, compare methods and datasets, identify gaps, and position the selected research question within those gaps.
 
 ![Literature map](figures/figure_02_literature_map.png)
 
 ## Methodology
-The methodology is provisional. Once the Proposal and Experiment stages exist, this section should describe data, collection, experimental setup, variables, metrics, and analysis.
+The methodology is provisional. Once Proposal and Experiment stages are complete, this section should specify data sources, collection procedures, variables, metrics, baselines, statistical analysis, and reproducibility details.
 
 ![Methodology schematic](figures/figure_03_methodology_schematic.png)
 
 ## Results
-Results are pending. No completed findings, statistics, or performance claims are available yet.
+Results are pending. No completed findings, statistical outcomes, or performance numbers are reported in this provisional draft.
 
 ![Results chart placeholder](figures/figure_04_results_chart.png)
 
 ## Discussion
-Because results are pending, interpretation is limited. The final version should explain whether the hypothesis was supported, compare findings to literature, and describe limitations.
+Because experiment results are pending, interpretation is limited. The final version should explain whether the hypothesis was supported, compare findings with the literature, and state threats to validity.
 
 ![Limitations matrix](figures/figure_05_limitations_matrix.png)
 
 ## Conclusion
-This draft verifies that the Paper stage can run before all upstream agents exist. The next step is to replace placeholders with real outputs from PI, Literature, Proposal, Experiment, and Citations.
+This draft confirms the Paper stage can run before all upstream stages are complete. The next version should replace placeholders with verified literature, proposal details, experiment results, and citations.
 
 ## Figure Generation Notes
 - figures/figure_01_workflow.png: Workflow diagram; illustrative.
@@ -268,7 +204,7 @@ This draft verifies that the Paper stage can run before all upstream agents exis
 - figures/figure_05_limitations_matrix.png: Derived from review and claim audit.
 
 ## References
-TODO: Add verified citations from Citations stage.
+TODO: Add verified citations from the Citations stage.
 """
 
 
@@ -393,7 +329,6 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise SystemExit("--stage-inputs-json must contain a JSON object")
-
         for key in STAGE_PLACEHOLDERS:
             if payload.get(key):
                 stage_inputs[key] = str(payload[key]).strip()
@@ -401,7 +336,6 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
     if args.run_pi:
         if not args.prompt:
             raise SystemExit("--run-pi requires --prompt")
-
         try:
             from pi_agent import run_pi_agent
         except ImportError as exc:
@@ -409,11 +343,10 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
 
         pi_result = run_pi_agent(args.prompt)
         stage_inputs["pi"] = pi_result
-
         pi_path = Path(args.out) / "stage_outputs" / "pi_output.md"
         pi_path.parent.mkdir(parents=True, exist_ok=True)
         pi_path.write_text(pi_result.rstrip() + "\n", encoding="utf-8")
-        
+
     cli_inputs = {
         "pi": args.pi_output,
         "part1_literature": args.part1_literature,
@@ -423,7 +356,6 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
         "experiment": args.experiment,
         "citations": args.citations,
     }
-
     for key, value in cli_inputs.items():
         loaded = read_optional_text(value, key)
         if loaded:
@@ -442,11 +374,9 @@ def format_stage_inputs(stage_inputs: dict[str, str]) -> str:
         "experiment": "Experiment Process and Results",
         "citations": "Verified Citations",
     }
-
     parts = ["# Upstream Stage Inputs"]
     for key in STAGE_PLACEHOLDERS:
         parts.append(f"\n## {labels[key]}\n{stage_inputs[key]}")
-
     return "\n".join(parts)
 
 
@@ -461,26 +391,10 @@ generation. Do not include assistant-style prefaces such as "Here is..." or
 Write careful academic prose. Do not fabricate citations, datasets, statistics,
 experiments, graphs, or results. If evidence is missing, label it as missing,
 pending, provisional, or TODO.
-
-The final paper must be at least 4,000 words when API generation is available.
 """
 
 
-def build_plan(model: ChatModel, source: str, stage_inputs: str, config: AgentConfig) -> str:
-    prompt = f"""Create a research paper plan.
-
-{PAPER_REQUIREMENTS}
-
-Source:
-{source}
-
-Stage inputs:
-{stage_inputs}
-"""
-    return model.complete(system_prompt(), prompt, temperature=config.temperature, max_tokens=config.max_tokens)
-
-
-def write_draft(model: ChatModel, source: str, stage_inputs: str, plan: str, config: AgentConfig) -> str:
+def write_draft(model: ChatModel, source: str, stage_inputs: str, config: AgentConfig) -> str:
     prompt = f"""Write the full research paper draft.
 
 CRITICAL OUTPUT RULES:
@@ -498,9 +412,6 @@ Source:
 
 Stage inputs:
 {stage_inputs}
-
-Plan:
-{plan}
 """
     draft = model.complete(system_prompt(), prompt, temperature=config.temperature, max_tokens=config.max_tokens)
     if looks_like_meta_response(draft) or not has_required_paper_sections(draft):
@@ -522,9 +433,6 @@ Source:
 
 Stage inputs:
 {stage_inputs}
-
-Plan:
-{plan}
 """
         draft = model.complete(
             system_prompt(),
@@ -533,85 +441,6 @@ Plan:
             max_tokens=max(config.max_tokens, 14000),
         )
     return normalize_paper_draft(draft)
-
-
-def review_draft(model: ChatModel, draft: str, config: AgentConfig, perspective: str) -> Review:
-    prompt = f"""Review this draft as a strict {perspective} reviewer.
-
-Return JSON with this exact schema:
-{{
-  "novelty": 1-5,
-  "correctness": 1-5,
-  "evidence": 1-5,
-  "clarity": 1-5,
-  "reproducibility": 1-5,
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "revision_plan": ["..."]
-}}
-
-Penalize:
-- under 4,000 words
-- missing required sections
-- fabricated citations/results
-- missing visual provenance
-- unclear placeholder handling
-
-Return ONLY valid JSON. Do not include markdown fences, comments, explanations, or extra text.
-Draft:
-{draft}
-"""
-    raw = model.complete(system_prompt(), prompt, temperature=0.0, max_tokens=1800)
-    
-    try:
-        data = parse_json_object(raw)
-    except Exception as exc:
-        print("Reviewer did not return valid JSON; using fallback review.")
-        print(f"Reason: {exc}")
-        data = {
-            "novelty": 2,
-            "correctness": 2,
-            "evidence": 1,
-            "clarity": 2,
-            "reproducibility": 1,
-            "strengths": ["The paper draft was generated."],
-            "weaknesses": ["Reviewer output was not valid JSON, so this review is a fallback."],
-            "revision_plan": ["Ask the reviewer agent to return strict JSON only."],
-        }
-
-    score = ReviewScore(
-        novelty=clamp_score(data.get("novelty")),
-        correctness=clamp_score(data.get("correctness")),
-        evidence=clamp_score(data.get("evidence")),
-        clarity=clamp_score(data.get("clarity")),
-        reproducibility=clamp_score(data.get("reproducibility")),
-    )
-
-    return Review(
-        score=score,
-        strengths=list_strings(data.get("strengths")),
-        weaknesses=list_strings(data.get("weaknesses")),
-        revision_plan=list_strings(data.get("revision_plan")),
-    )
-
-
-def revise_draft(model: ChatModel, draft: str, review: Review, config: AgentConfig) -> str:
-    prompt = f"""Revise the paper using this review.
-
-Rules:
-- Output the complete revised paper, not a diff.
-- Preserve truthful uncertainty.
-- Do not fabricate citations, data, figures, or results.
-- Keep the paper at least 4,000 words when possible.
-- Improve visual references and Figure Generation Notes.
-
-Review:
-{json.dumps(asdict(review), indent=2)}
-
-Draft:
-{draft}
-"""
-    return model.complete(system_prompt(), prompt, temperature=config.temperature, max_tokens=config.max_tokens)
 
 
 def generate_visual_manifest(model: ChatModel, draft: str, config: AgentConfig) -> str:
@@ -633,161 +462,30 @@ Draft:
     return model.complete(system_prompt(), prompt, temperature=config.temperature, max_tokens=3000)
 
 
-def decide_next(review: Review, iteration: int, config: AgentConfig, pivot_count: int) -> Decision:
-    total = review.score.total
-
-    if total >= config.quality_threshold:
-        return Decision("PROCEED", "quality threshold reached", total)
-
-    if total <= config.pivot_threshold and pivot_count < config.max_pivots:
-        return Decision("PIVOT", "score is below pivot threshold", total)
-
-    if iteration >= config.iterations:
-        return Decision("PROCEED", "iteration budget exhausted", total)
-
-    return Decision("REFINE", "quality below threshold", total)
-
-
-def parse_json_object(text: str) -> dict:
-    text = text.strip()
-
-    # Remove common markdown fences.
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?", "", text).strip()
-        text = re.sub(r"```$", "", text).strip()
-
-    # First try direct JSON.
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Then extract the first balanced JSON object.
-    start = text.find("{")
-    if start == -1:
-        raise ValueError(f"No JSON object found in model output:\n{text[:500]}")
-
-    depth = 0
-    in_string = False
-    escape = False
-
-    for index in range(start, len(text)):
-        char = text[index]
-
-        if escape:
-            escape = False
-            continue
-
-        if char == "\\":
-            escape = True
-            continue
-
-        if char == '"':
-            in_string = not in_string
-            continue
-
-        if in_string:
-            continue
-
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                candidate = text[start : index + 1]
-                return json.loads(candidate)
-
-    raise ValueError(f"Could not parse JSON object from model output:\n{text[:500]}")
-
-
-def clamp_score(value: object) -> int:
-    try:
-        score = int(value)
-    except (TypeError, ValueError):
-        return 1
-
-    return max(1, min(5, score))
-
-
-def list_strings(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item).strip() for item in value if str(item).strip()]
-
-
-def format_review(review: Review) -> str:
-    return "\n".join(
-        [
-            "# Review",
-            "",
-            "## Scores",
-            f"- Novelty: {review.score.novelty}/5",
-            f"- Correctness: {review.score.correctness}/5",
-            f"- Evidence: {review.score.evidence}/5",
-            f"- Clarity: {review.score.clarity}/5",
-            f"- Reproducibility: {review.score.reproducibility}/5",
-            f"- Total: {review.score.total}/25",
-            "",
-            "## Strengths",
-            *format_bullets(review.strengths),
-            "",
-            "## Weaknesses",
-            *format_bullets(review.weaknesses),
-            "",
-            "## Revision Plan",
-            *format_bullets(review.revision_plan),
-        ]
-    )
-
-
-def format_bullets(items: Iterable[str]) -> list[str]:
-    rows = [f"- {item}" for item in items]
-    return rows or ["- None provided."]
-
-
 def write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
-def append_jsonl(path: Path, row: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, ensure_ascii=True) + "\n")
-
-
 def read_source(args: argparse.Namespace) -> tuple[str, dict[str, str]]:
     pieces = []
-
     if args.prompt:
         pieces.append(args.prompt.strip())
-
     if args.paper:
-        path = Path(args.paper)
-        pieces.append(path.read_text(encoding="utf-8"))
-
+        pieces.append(Path(args.paper).read_text(encoding="utf-8"))
     if not pieces:
         raise SystemExit("Provide --prompt, --paper, or both.")
-
-    stage_inputs = collect_stage_inputs(args)
-    return "\n\n".join(pieces), stage_inputs
+    return "\n\n".join(pieces), collect_stage_inputs(args)
 
 
 def run_agent(args: argparse.Namespace) -> Path:
     source, stage_inputs = read_source(args)
     output_dir = Path(args.out).resolve()
-
     config = AgentConfig(
         model=args.model,
-        iterations=args.iterations,
         output_dir=output_dir,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
-        review_agents=[agent.strip() for agent in args.review_agents.split(",") if agent.strip()],
-        quality_threshold=args.quality_threshold,
-        pivot_threshold=args.pivot_threshold,
-        max_pivots=args.max_pivots,
-        memory_path=Path(args.memory).expanduser().resolve(),
     )
 
     model = choose_model(config.model)
@@ -796,111 +494,21 @@ def run_agent(args: argparse.Namespace) -> Path:
     write(output_dir / "source.md", source)
     write(output_dir / "stage_inputs.md", formatted_stage_inputs)
     write(output_dir / "stage_inputs.json", json.dumps(stage_inputs, indent=2))
-    write(
-        output_dir / "config.json",
-        json.dumps(
-            {
-                **asdict(config),
-                "output_dir": str(config.output_dir),
-                "memory_path": str(config.memory_path),
-            },
-            indent=2,
-        ),
-    )
 
-    print("Planning paper...")
-    plan = build_plan(model, source, formatted_stage_inputs, config)
-    write(output_dir / "plan.md", plan)
+    print("Writing paper draft...")
+    draft = write_draft(model, source, formatted_stage_inputs, config)
+    write(output_dir / "final.md", draft)
+    write(output_dir / "best.md", draft)
 
-    print("Writing initial draft...")
-    draft = write_draft(model, source, formatted_stage_inputs, plan, config)
-    write(output_dir / "draft_00.md", draft)
-    write(output_dir / "figures" / "visual_manifest_00.md", generate_visual_manifest(model, draft, config))
-
-    best_draft = draft
-    pivot_count = 0
-
-    for iteration in range(1, config.iterations + 1):
-        print(f"Reviewing iteration {iteration}...")
-
-        reviews = [
-            review_draft(model, best_draft, config, perspective)
-            for perspective in config.review_agents
-        ]
-        review = aggregate_reviews(reviews)
-
-        write(output_dir / f"review_{iteration:02d}.md", format_review(review))
-        append_jsonl(
-            output_dir / "scores.jsonl",
-            {
-                "iteration": iteration,
-                "score": asdict(review.score),
-                "total": review.score.total,
-                "timestamp": int(time.time()),
-            },
-        )
-
-        decision = decide_next(review, iteration, config, pivot_count)
-        append_jsonl(output_dir / "decisions.jsonl", asdict(decision) | {"iteration": iteration})
-
-        if decision.action == "PROCEED":
-            print(f"Decision: PROCEED ({decision.reason})")
-            break
-
-        print(f"Decision: {decision.action} ({decision.reason})")
-
-        if decision.action == "PIVOT":
-            pivot_count += 1
-
-        best_draft = revise_draft(model, best_draft, review, config)
-        write(output_dir / f"draft_{iteration:02d}.md", best_draft)
-        write(
-            output_dir / "figures" / f"visual_manifest_{iteration:02d}.md",
-            generate_visual_manifest(model, best_draft, config),
-        )
-
-    write(output_dir / "final.md", best_draft)
-    write(output_dir / "best.md", best_draft)
-    write(output_dir / "figures" / "visual_manifest_final.md", generate_visual_manifest(model, best_draft, config))
-
-    if config.iterations > 0:
-        final_review = aggregate_reviews(
-            [review_draft(model, best_draft, config, perspective) for perspective in config.review_agents]
-        )
-        write(output_dir / "final_review.md", format_review(final_review))
+    print("Generating visual manifest...")
+    write(output_dir / "figures" / "visual_manifest_final.md", generate_visual_manifest(model, draft, config))
 
     return output_dir
 
 
-def aggregate_reviews(reviews: list[Review]) -> Review:
-    if not reviews:
-        raise ValueError("No reviews to aggregate")
-
-    count = len(reviews)
-
-    score = ReviewScore(
-        novelty=round(sum(review.score.novelty for review in reviews) / count),
-        correctness=round(sum(review.score.correctness for review in reviews) / count),
-        evidence=round(sum(review.score.evidence for review in reviews) / count),
-        clarity=round(sum(review.score.clarity for review in reviews) / count),
-        reproducibility=round(sum(review.score.reproducibility for review in reviews) / count),
-    )
-
-    strengths = []
-    weaknesses = []
-    revision_plan = []
-
-    for review in reviews:
-        strengths.extend(review.strengths)
-        weaknesses.extend(review.weaknesses)
-        revision_plan.extend(review.revision_plan)
-
-    return Review(score=score, strengths=strengths, weaknesses=weaknesses, revision_plan=revision_plan)
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create and iteratively improve a research paper.",
+        description="Create a research paper draft from previous stage outputs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """
@@ -909,7 +517,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             """
         ),
     )
-
     parser.add_argument("--prompt", help="Research prompt to turn into a paper.")
     parser.add_argument("--paper", help="Path to a Markdown or text seed paper.")
     parser.add_argument("--out", default="paper_runs/latest", help="Output directory.")
@@ -924,16 +531,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--experiment", help="Experiment process/results output text or file path.")
     parser.add_argument("--citations", help="Verified citations output text or file path.")
 
-    parser.add_argument("--iterations", type=int, default=0)
+    # Kept for CLI compatibility; review iterations now belong to review_agent.py.
+    parser.add_argument("--iterations", type=int, default=0, help="Ignored. Review iterations are handled by review_agent.py.")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--temperature", type=float, default=0.3)
     parser.add_argument("--max-tokens", type=int, default=14000)
-    parser.add_argument("--review-agents", default="novelty,method,evidence,clarity,reproducibility")
-    parser.add_argument("--quality-threshold", type=int, default=21)
-    parser.add_argument("--pivot-threshold", type=int, default=10)
-    parser.add_argument("--max-pivots", type=int, default=1)
-    parser.add_argument("--memory", default="paper_runs/evolution/lessons.jsonl")
-
+    parser.add_argument("--review-agents", default="", help="Ignored. Review agents are handled by review_agent.py.")
+    parser.add_argument("--quality-threshold", type=int, default=21, help="Ignored.")
+    parser.add_argument("--pivot-threshold", type=int, default=10, help="Ignored.")
+    parser.add_argument("--max-pivots", type=int, default=1, help="Ignored.")
+    parser.add_argument("--memory", default="paper_runs/evolution/lessons.jsonl", help="Ignored.")
     return parser.parse_args(argv)
 
 
