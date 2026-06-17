@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -54,15 +55,30 @@ def run_agent_prompt(user_input: str) -> str:
         "agentId": AGENT_ID,
         "userInput": user_input,
     }
-    response = requests.post(
-        f"{BASE_URL.rstrip('/')}/api/agent/run/async",
-        headers=headers,
-        json=body,
-        timeout=180,
-    )
-    response.raise_for_status()
-    request_id = response.json()["data"]["requestId"]
-    return read_agent_stream(request_id)
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.post(
+                f"{BASE_URL.rstrip('/')}/api/agent/run/async",
+                headers=headers,
+                json=body,
+                timeout=180,
+            )
+            response.raise_for_status()
+            request_id = response.json()["data"]["requestId"]
+            return read_agent_stream(request_id)
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            print(f"Review API request failed on attempt {attempt}/3: {exc}")
+            if attempt < 3:
+                time.sleep(5 * attempt)
+        except RuntimeError as exc:
+            last_error = exc
+            print(f"Review API stream failed on attempt {attempt}/3: {exc}")
+            if attempt < 3:
+                time.sleep(5 * attempt)
+
+    return fallback_review_output(str(last_error))
 
 
 def read_agent_stream(request_id: str) -> str:
@@ -117,6 +133,23 @@ def split_review_output(raw: str) -> ReviewResult:
     revised = revised_match.group(1).strip() if revised_match else raw.strip()
     weaknesses = weakness_match.group(1).strip() if weakness_match else "No separate weakness report was returned."
     return ReviewResult(revised_draft=revised, weaknesses=weaknesses, raw=raw)
+
+
+def fallback_review_output(reason: str) -> str:
+    return f"""# Revised Draft
+
+Review agent could not reach the API, so no API-generated revision was produced.
+Use the original paper draft as the current reviewed draft until the API is
+reachable again.
+
+# Identified Weaknesses
+
+- Review API unavailable: {reason}
+- Citation verification could not be performed.
+- Statistical claim checking could not be performed.
+- Experiment strength could not be evaluated.
+- Re-run review_agent.py when the API endpoint is reachable.
+"""
 
 
 def run_review_agent(draft: str, output_dir: str | Path | None = None) -> ReviewResult:
