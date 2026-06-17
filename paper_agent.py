@@ -117,6 +117,8 @@ class AICompatibleModel(ChatModel):
             raise ValueError("PRINCIPAL_ID is not set")
 
     def complete(self, system: str, user: str, *, temperature: float, max_tokens: int) -> str:
+        import requests
+
         del temperature, max_tokens
 
         headers = {
@@ -130,79 +132,64 @@ class AICompatibleModel(ChatModel):
             "userInput": f"{system}\n\n{user}",
         }
 
-        request = urllib.request.Request(
+        response = requests.post(
             f"{self.base_url}/api/agent/run/async",
-            data=json.dumps(body).encode("utf-8"),
             headers=headers,
-            method="POST",
+            json=body,
+            timeout=180,
         )
+        response.raise_for_status()
 
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                result = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Agent request failed with HTTP {exc.code}: {body_text}") from exc
+        data = response.json()
+        request_id = data["data"]["requestId"]
 
-        request_id = result["data"]["requestId"]
         return self._read_stream(request_id)
 
     def _read_stream(self, request_id: str) -> str:
-        from urllib.parse import urlencode
-        import socket
+        import requests
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "X-Principal-Id": self.principal_id,
         }
 
-        query = urlencode({"requestId": request_id})
-        request = urllib.request.Request(
-            f"{self.base_url}/api/agent/run/stream?{query}",
+        response = requests.get(
+            f"{self.base_url}/api/agent/run/stream",
             headers=headers,
-            method="GET",
+            params={"requestId": request_id},
+            stream=True,
+            timeout=(30, 300),
         )
+        response.raise_for_status()
 
         full_response = ""
 
-        try:
-            with urllib.request.urlopen(request, timeout=300) as response:
-                while True:
-                    try:
-                        raw_line = response.readline()
-                    except socket.timeout:
-                        if full_response.strip():
-                            print("Stream timed out after partial response; continuing with partial text.")
-                            return full_response.strip()
-                        raise RuntimeError("Agent stream timed out before returning any text.")
+        for line in response.iter_lines():
+            if not line:
+                continue
 
-                    if not raw_line:
-                        break
+            decoded = line.decode("utf-8", errors="replace")
 
-                    line = raw_line.decode("utf-8", errors="replace").strip()
+            if not decoded.startswith("data:"):
+                continue
 
-                    if not line.startswith("data:"):
-                        continue
+            try:
+                data = json.loads(decoded[5:])
+            except json.JSONDecodeError:
+                continue
 
-                    try:
-                        data = json.loads(line[5:])
-                    except json.JSONDecodeError:
-                        continue
+            event_type = data.get("eventType")
 
-                    if data.get("eventType") == "TEXT_DELTA":
-                        full_response += data.get("data", {}).get("text", "")
+            if event_type in {"TEXT_START", "TEXT_DELTA"}:
+                full_response += data.get("data", {}).get("text", "")
 
-                    if data.get("eventType") in {"RUN_COMPLETED", "DONE", "COMPLETED"}:
-                        break
-
-        except urllib.error.HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Agent stream failed with HTTP {exc.code}: {body_text}") from exc
-        except urllib.error.URLError as exc:
-            if full_response.strip():
-                print("Stream connection failed after partial response; continuing with partial text.")
-                return full_response.strip()
-            raise RuntimeError(f"Agent stream failed before returning text: {exc}") from exc
+            if event_type in {
+                "MESSAGE_COMPLETED",
+                "RUN_COMPLETED",
+                "DONE",
+                "COMPLETED",
+            }:
+                break
 
         if not full_response.strip():
             raise RuntimeError("Agent stream ended without returning text.")
