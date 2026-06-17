@@ -15,11 +15,15 @@ RULES:
 - If the topic is too vague, only output a clarifying question
 - DO NOT formulate a research question or hypothesis
 - Your output will be passed directly to a literature search engine
+- DO NOT use any markdown formatting, bold, italics, or special characters
+- Output plain text only
 
-OUTPUT in this exact format:
-Primary search query: [main search string]
-Alternative queries: [3-4 variations using different terminology]
-Key terms: [5-10 individual keywords relevant to this topic]
+IMPORTANT: You MUST begin your response with exactly "Primary search query:" followed by the query. This is required.
+
+OUTPUT in this exact format: (copy exactly, no extra characters, no markdown, no bold)
+- Primary search query: [main search string]
+- Alternative queries: [3-4 variations using different terminology]
+- Key terms: [5-10 individual keywords relevant to this topic]
 """
 
 def get_response(request_id):
@@ -50,6 +54,7 @@ def get_response(request_id):
                     pass
 
     print(full_response)
+    return full_response
 
 def run_pi_agent(user_topic):
     headers = {
@@ -74,7 +79,7 @@ def run_pi_agent(user_topic):
     print("Got requestId:", request_id)
     
     print("\n--- Agent Response ---")
-    get_response(request_id)
+    return get_response(request_id)
 
 
 if __name__ == "__main__":

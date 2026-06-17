@@ -10,7 +10,11 @@ You are the Literature Review Agent in an autonomous research pipeline. You will
 
 Your job is to: 
 1. Identify the major themes and findings across these papers 
-2. Identify clear GAPS in the existing literature — things that have NOT been studied, contradictions between papers, or underexplored angles 
+2. Identify clear GAPS in the existing literature, including:
+   - Things that have NOT been studied at all
+   - Topics that HAVE been studied but not with certain methods, datasets, or analytical approaches
+   - Contradictions between papers that need resolution
+   - Underexplored angles on well-studied questions
 3. Generate exactly 5-10 candidate research questions that could fill these gaps 
 
 
@@ -18,21 +22,26 @@ RULES:
 - Each research question must be grounded in the literature (reference specific gaps you found) 
 - Questions must be specific and testable/answerable through empirical research 
 - Do NOT repeat what has already been researched — focus on what's missing 
-- Rank questions from most to least promising 
+- Rank questions from most to least promising
+- Each research question must be feasible for an AI to investigate autonomously — this means it must be answerable through computational methods (data analysis, statistical modeling, machine learning, simulation, etc.) using publicly available datasets or synthetically generated data
+- Do NOT propose questions that require physical experiments, lab equipment, human subjects, or proprietary data
+- You MUST follow the output format exactly as specified — do not summarize, do not create tables, do not write to files, do not deviate in any way
+- You MUST output ALL candidate research questions in full, not just the top 3
+- DO NOT add any text before SUMMARY OF EXISTING WORK or after the last research question
 
-OUTPUT in this exact format: 
+OUTPUT — COPY THIS FORMAT EXACTLY, NO DEVIATIONS:
 
 SUMMARY OF EXISTING WORK:
-[2-3 paragraph synthesis of major findings and themes]
+[2-3 paragraph synthesis]
 
-GAPS: 
-- [gap 1] 
-- [gap 2] 
-... 
+GAPS:
+1. [gap 1]
+2. [gap 2]
+...
 
-CANDIDATE RESEARCH QUESTIONS: 
-1. [Most promising question] | Gap addressed: [which gap] 
-2. [Question] | Gap addressed: [which gap]
+CANDIDATE RESEARCH QUESTIONS:
+1. [question] | Gap addressed: [gap]
+2. [question] | Gap addressed: [gap]
 ...
 """
 
@@ -40,24 +49,39 @@ CANDIDATE RESEARCH QUESTIONS:
 # PARSE PI OUTPUT
 # ─────────────────────────────────────────────
 
-# ─────────────────────────────────────────────
-# PARSE PI OUTPUT
-# ─────────────────────────────────────────────
-
 def parse_pi_output(pi_output: str) -> dict:
-    """Extract primary query, alternative queries, and key terms from PI output."""
     result = {"primary": "", "alternatives": [], "key_terms": []}
 
-    for line in pi_output.strip().splitlines():
-        line = line.strip()
-        if line.lower().startswith("primary search query:"):
-            result["primary"] = line.split(":", 1)[1].strip()
-        elif line.lower().startswith("alternative queries:"):
-            raw = line.split(":", 1)[1].strip()
-            result["alternatives"] = [q.strip(" -•") for q in raw.split(",") if q.strip()]
-        elif line.lower().startswith("key terms:"):
-            raw = line.split(":", 1)[1].strip()
-            result["key_terms"] = [t.strip(" -•") for t in raw.split(",") if t.strip()]
+    lines = pi_output.strip().splitlines()
+    for i, line in enumerate(lines):
+        line_clean = line.strip().strip("*`:#")
+        if not line_clean:
+            continue
+
+        if "alternative queries" in line_clean.lower():
+            parts = line_clean.split(":", 1)
+            raw = parts[1].strip() if len(parts) > 1 and parts[1].strip() else ""
+            if not raw:
+                alts = []
+                for j in range(i + 1, min(i + 6, len(lines))):
+                    alt_line = lines[j].strip().strip("`*")
+                    if alt_line and alt_line[0].isdigit():
+                        alt_text = alt_line.split(".", 1)[-1].strip().strip("`*")
+                        alts.append(alt_text)
+                result["alternatives"] = alts
+            else:
+                result["alternatives"] = [q.strip(" -•`*") for q in raw.split(",") if q.strip()]
+
+        elif "key terms" in line_clean.lower():
+            parts = line_clean.split(":", 1)
+            if len(parts) > 1:
+                result["key_terms"] = [t.strip(" -•`*") for t in parts[1].split(",") if t.strip()]
+
+        elif not result["primary"]:
+            if ":" in line_clean:
+                result["primary"] = line_clean.split(":", 1)[1].strip().strip("`* ")
+            else:
+                result["primary"] = line_clean.strip("`*")
 
     return result
 
@@ -104,8 +128,9 @@ def search_arxiv(query: str, limit: int = 10) -> list[dict]:
                 "max_results": limit,
                 "sortBy": "relevance"
             },
-            timeout=10
+            timeout=30
         )
+
         import xml.etree.ElementTree as ET
         root = ET.fromstring(response.text)
         ns = {"atom": "http://www.w3.org/2005/Atom"}
@@ -179,33 +204,45 @@ def search_openalex(query: str, limit: int = 10) -> list[dict]:
 
 def run_all_searches(parsed: dict) -> list[dict]:
     """Run searches across all three databases in parallel."""
-    queries = [parsed["primary"]] + parsed["alternatives"][:2]  # primary + 2 alts
+    queries = [parsed["primary"]] + parsed["alternatives"]
     all_papers = []
     seen_titles = set()
 
-    search_tasks = []
-    for q in queries:
-        search_tasks.append(("semantic_scholar", q))
-        search_tasks.append(("arxiv", q))
-        search_tasks.append(("openalex", q))
+    # Separate arXiv from other tasks
+    arxiv_tasks = [("arxiv", q) for q in queries]
+    other_tasks = [
+        (source, q)
+        for q in queries
+        for source in ("semantic_scholar", "openalex")
+    ]
 
     def run_search(task):
         source, query = task
         if source == "semantic_scholar":
-            return search_semantic_scholar(query, limit=8)
+            return search_semantic_scholar(query, limit=15)
         elif source == "arxiv":
-            return search_arxiv(query, limit=8)
+            return search_arxiv(query, limit=15)
         else:
-            return search_openalex(query, limit=8)
+            return search_openalex(query, limit=15)
 
+    def add_papers(results):
+        for paper in results:
+            title_key = paper["title"].lower().strip()
+            if title_key not in seen_titles and paper["abstract"]:
+                seen_titles.add(title_key)
+                all_papers.append(paper)
+
+    # Run Semantic Scholar and OpenAlex in parallel
     with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = {executor.submit(run_search, task): task for task in search_tasks}
+        futures = {executor.submit(run_search, task): task for task in other_tasks}
         for future in as_completed(futures):
-            for paper in future.result():
-                title_key = paper["title"].lower().strip()
-                if title_key not in seen_titles and paper["abstract"]:
-                    seen_titles.add(title_key)
-                    all_papers.append(paper)
+            add_papers(future.result())
+
+    # Run arXiv sequentially with delay to avoid rate limiting
+    for task in arxiv_tasks:
+        results = run_search(task)
+        add_papers(results)
+        time.sleep(3)
 
     print(f"Found {len(all_papers)} unique papers across all sources.")
     return all_papers
@@ -302,7 +339,6 @@ def run_literature_stage(pi_output: str, original_topic: str) -> str:
     result = run_literature_agent(papers_text, original_topic)
 
     return result
-
 
 # FOR STANDALONE TESTING — paste a PI output directly
 if __name__ == "__main__":
