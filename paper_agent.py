@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import requests
 import json
 import os
 import re
@@ -117,8 +116,6 @@ class AICompatibleModel(ChatModel):
     def complete(self, system: str, user: str, *, temperature: float, max_tokens: int) -> str:
         import requests
 
-        del temperature, max_tokens
-
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -130,16 +127,32 @@ class AICompatibleModel(ChatModel):
             "userInput": f"{system}\n\n{user}",
         }
 
-        response = requests.post(
-            f"{self.base_url}/api/agent/run/async",
-            headers=headers,
-            json=body,
-            timeout=180,
-        )
-        response.raise_for_status()
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/api/agent/run/async",
+                    headers=headers,
+                    json=body,
+                    timeout=180,
+                )
+                response.raise_for_status()
 
-        request_id = response.json()["data"]["requestId"]
-        return self._read_stream(request_id)
+                request_id = response.json()["data"]["requestId"]
+                return self._read_stream(request_id)
+            except requests.exceptions.RequestException as exc:
+                last_error = exc
+                print(f"Paper API request failed on attempt {attempt}/3: {exc}")
+                if attempt < 3:
+                    time.sleep(5 * attempt)
+            except RuntimeError as exc:
+                last_error = exc
+                print(f"Paper API stream failed on attempt {attempt}/3: {exc}")
+                if attempt < 3:
+                    time.sleep(5 * attempt)
+
+        print(f"Paper API unavailable; using local fallback for this step. Reason: {last_error}")
+        return TemplateFallbackModel().complete(system, user, temperature=temperature, max_tokens=max_tokens)
 
     def _read_stream(self, request_id: str) -> str:
         import requests
@@ -294,6 +307,63 @@ def fallback_visual_manifest() -> str:
 """
 
 
+def looks_like_meta_response(text: str) -> bool:
+    lowered = text.strip().lower()
+    meta_starts = (
+        "i'll write",
+        "i will write",
+        "i'll create",
+        "i will create",
+        "i'll prepare",
+        "i will prepare",
+        "here is",
+        "i can",
+        "let me",
+        "the research paper has been completed",
+        "the paper has been completed",
+        "the manuscript has been completed",
+        "the research paper is complete",
+        "the paper is complete",
+    )
+    meta_phrases = (
+        "key aspects of the paper",
+        "containing all eight required sections",
+        "has been completed and delivered",
+        "the draft has been completed",
+    )
+    return (
+        (lowered.startswith(meta_starts) and len(text.split()) < 500)
+        or any(phrase in lowered[:1200] for phrase in meta_phrases)
+    )
+
+
+def has_required_paper_sections(text: str) -> bool:
+    lowered = text.lower()
+    required = (
+        "abstract",
+        "introduction",
+        "review",
+        "methodology",
+        "results",
+        "discussion",
+        "conclusion",
+        "references",
+    )
+    if not re.search(r"(?m)^#\s+\S+", text):
+        return False
+    return all(re.search(rf"(?m)^##?\s+.*{section}", lowered) for section in required)
+
+
+def normalize_paper_draft(draft: str) -> str:
+    draft = draft.strip()
+    if not draft:
+        return fallback_paper()
+    if looks_like_meta_response(draft) or not has_required_paper_sections(draft):
+        print("Paper model returned a summary or incomplete draft; using provisional fallback draft.")
+        return fallback_paper()
+    return draft
+
+
 def choose_model(model_name: str) -> ChatModel:
     if API_KEY:
         return AICompatibleModel(model_name)
@@ -383,6 +453,11 @@ def format_stage_inputs(stage_inputs: dict[str, str]) -> str:
 def system_prompt() -> str:
     return """You are the Paper agent in an autonomous research pipeline.
 
+Output the paper directly. Do not narrate your intentions. Do not say you will
+write, create, prepare, generate, or produce a paper. Do not mention PDF
+generation. Do not include assistant-style prefaces such as "Here is..." or
+"I'll write...".
+
 Write careful academic prose. Do not fabricate citations, datasets, statistics,
 experiments, graphs, or results. If evidence is missing, label it as missing,
 pending, provisional, or TODO.
@@ -408,6 +483,14 @@ Stage inputs:
 def write_draft(model: ChatModel, source: str, stage_inputs: str, plan: str, config: AgentConfig) -> str:
     prompt = f"""Write the full research paper draft.
 
+CRITICAL OUTPUT RULES:
+- Output ONLY the paper itself.
+- Do NOT say "I will write", "I'll write", "I'll create", "Here is", or describe what you are going to do.
+- Do NOT mention creating a PDF.
+- Start directly with the paper title as a Markdown H1 heading.
+- The output must be a complete Markdown research paper.
+- Target at least 4,000 words when API generation is available.
+
 {PAPER_REQUIREMENTS}
 
 Source:
@@ -419,7 +502,37 @@ Stage inputs:
 Plan:
 {plan}
 """
-    return model.complete(system_prompt(), prompt, temperature=config.temperature, max_tokens=config.max_tokens)
+    draft = model.complete(system_prompt(), prompt, temperature=config.temperature, max_tokens=config.max_tokens)
+    if looks_like_meta_response(draft) or not has_required_paper_sections(draft):
+        retry_prompt = f"""Your previous response was INVALID because it summarized completion instead of outputting the paper.
+
+You must now output ONLY the full Markdown paper itself.
+
+Hard rules:
+- Start with a Markdown H1 title: # [paper title]
+- Include these headings exactly: ## Abstract, ## Introduction, ## Review, ## Methodology, ## Results, ## Discussion, ## Conclusion, ## Figure Generation Notes, ## References.
+- Do not say "I will", "I'll", "Here is", "completed", "delivered", or mention PDF generation.
+- Do not summarize the paper. Write the actual paper body.
+- Target at least 4,000 words when possible.
+
+{PAPER_REQUIREMENTS}
+
+Source:
+{source}
+
+Stage inputs:
+{stage_inputs}
+
+Plan:
+{plan}
+"""
+        draft = model.complete(
+            system_prompt(),
+            retry_prompt,
+            temperature=config.temperature,
+            max_tokens=max(config.max_tokens, 14000),
+        )
+    return normalize_paper_draft(draft)
 
 
 def review_draft(model: ChatModel, draft: str, config: AgentConfig, perspective: str) -> Review:
@@ -785,7 +898,7 @@ def aggregate_reviews(reviews: list[Review]) -> Review:
     return Review(score=score, strengths=strengths, weaknesses=weaknesses, revision_plan=revision_plan)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create and iteratively improve a research paper.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -821,7 +934,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pivots", type=int, default=1)
     parser.add_argument("--memory", default="paper_runs/evolution/lessons.jsonl")
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
