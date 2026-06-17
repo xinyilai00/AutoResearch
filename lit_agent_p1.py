@@ -1,3 +1,5 @@
+from unittest import result
+
 from config import BASE_URL, API_KEY, AGENT_ID, PRINCIPAL_ID
 
 import requests
@@ -67,6 +69,9 @@ def parse_pi_output(pi_output: str) -> dict:
                     alt_line = lines[j].strip().strip("`*")
                     if alt_line and alt_line[0].isdigit():
                         alt_text = alt_line.split(".", 1)[-1].strip().strip("`*")
+                        alts.append(alt_text)
+                    elif alt_line.startswith("-"):
+                        alt_text = alt_line.lstrip("- ").strip().strip("`*")
                         alts.append(alt_text)
                 result["alternatives"] = alts
             else:
@@ -278,6 +283,7 @@ def get_response(request_id: str) -> str:
         "Authorization": f"Bearer {API_KEY}",
         "X-Principal-Id": PRINCIPAL_ID
     }
+
     response = requests.get(
         f"{BASE_URL}/api/agent/run/stream",
         headers=headers,
@@ -295,6 +301,11 @@ def get_response(request_id: str) -> str:
                         full_response += data.get("data", {}).get("text", "")
                 except:
                     pass
+
+    # Fix truncated start
+    if full_response and not full_response.startswith("S"):
+        full_response = "SUMMARY OF EXISTING WORK:" + full_response[full_response.find("\n"):]
+
     return full_response
 
 def run_literature_agent(papers_text: str, topic: str) -> str:
