@@ -746,13 +746,15 @@ def run_agent(args: argparse.Namespace) -> Path:
             generate_visual_manifest(model, best_draft, config),
         )
 
-    final_review = aggregate_reviews(
-        [review_draft(model, best_draft, config, perspective) for perspective in config.review_agents]
-    )
-    write(output_dir / "final_review.md", format_review(final_review))
     write(output_dir / "final.md", best_draft)
     write(output_dir / "best.md", best_draft)
     write(output_dir / "figures" / "visual_manifest_final.md", generate_visual_manifest(model, best_draft, config))
+
+    if config.iterations > 0:
+        final_review = aggregate_reviews(
+            [review_draft(model, best_draft, config, perspective) for perspective in config.review_agents]
+        )
+        write(output_dir / "final_review.md", format_review(final_review))
 
     return output_dir
 
@@ -809,7 +811,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--experiment", help="Experiment process/results output text or file path.")
     parser.add_argument("--citations", help="Verified citations output text or file path.")
 
-    parser.add_argument("--iterations", type=int, default=2)
+    parser.add_argument("--iterations", type=int, default=0)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--temperature", type=float, default=0.3)
     parser.add_argument("--max-tokens", type=int, default=14000)

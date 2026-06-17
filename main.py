@@ -1,5 +1,10 @@
-from pi_agent import run_pi_agent
+from pathlib import Path
+
+from paper_agent import parse_args as parse_paper_args
+from paper_agent import run_agent as run_paper_agent
 from lit_agent_p1 import run_literature_stage
+from pi_agent import run_pi_agent
+from review_agent import run_review_from_file
 
 def parse_research_questions(lit_output: str) -> list[str]:
     questions = []
@@ -45,28 +50,97 @@ def user_selection(questions: list[str]) -> str:
         else:
             print(f"Invalid input. Please enter a number between 1 and {len(questions)} or 'quit'.")
 
+def write_text(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    return path
+
+
 def main():
     topic = input("Enter your research topic: ")
+    output_dir = Path("paper_runs/latest")
+    stage_dir = output_dir / "stage_outputs"
+    stage_dir.mkdir(parents=True, exist_ok=True)
 
     # PART 1
     print("\n--- PI Agent ---")
-    pi_output = run_pi_agent(topic)
+    try:
+        pi_output = run_pi_agent(topic)
+    except Exception as exc:
+        print(f"PI failed; using placeholder. Reason: {exc}")
+        pi_output = "PI placeholder: use the raw topic as the provisional search query."
+    pi_path = write_text(stage_dir / "pi_output.md", pi_output)
 
     print("\n--- Literature Agent (Part 1) ---")
-    lit_output = run_literature_stage(pi_output, topic)
+    try:
+        lit_output = run_literature_stage(pi_output, topic)
+    except Exception as exc:
+        print(f"Literature failed; using placeholder. Reason: {exc}")
+        lit_output = (
+            "Literature placeholder: literature review, verified citations, "
+            "research gaps, and candidate research questions are pending."
+        )
+    lit_path = write_text(stage_dir / "literature_output.md", lit_output)
     print(lit_output)
 
     questions = parse_research_questions(lit_output)
 
     if not questions:
-        print("\nCould not parse research questions. Please check the output above.")
-        exit()
-
-    selected_question = user_selection(questions)
+        print("\nCould not parse research questions. Paper agent will use a provisional question.")
+        selected_question = "No selected research question was parsed; infer a provisional question from the literature output."
+    else:
+        selected_question = user_selection(questions)
     if "| Gap addressed:" in selected_question:
         selected_question = selected_question.split("| Gap addressed:")[0].strip()
     print(f"\nSelected research question:\n{selected_question}")
-    # PART 2 goes here
+    selected_question_path = write_text(stage_dir / "selected_question.md", selected_question)
+
+    proposal_path = write_text(
+        stage_dir / "proposal_output.md",
+        "Proposal placeholder: hypothesis, variables, experiment design, and success criteria are pending.",
+    )
+    experiment_path = write_text(
+        stage_dir / "experiment_output.md",
+        "Experiment placeholder: experiment execution and results are pending. Do not report completed findings.",
+    )
+
+    # PART 2
+    print("\n--- Paper Agent ---")
+    paper_args = parse_paper_args(
+        [
+            "--prompt",
+            topic,
+            "--pi-output",
+            str(pi_path),
+            "--part1-literature",
+            str(lit_path),
+            "--research-question",
+            str(selected_question_path),
+            "--proposal",
+            str(proposal_path),
+            "--experiment",
+            str(experiment_path),
+            "--out",
+            str(output_dir),
+            "--iterations",
+            "0",
+            "--max-tokens",
+            "3000",
+        ]
+    )
+    final_dir = run_paper_agent(paper_args)
+    final_paper = final_dir / "final.md"
+    print(f"Draft paper: {final_paper}")
+
+    print("\n--- Review Agent ---")
+    try:
+        run_review_from_file(final_paper, final_dir / "review")
+        print(f"Reviewed draft: {final_dir / 'review' / 'reviewed_draft.md'}")
+        print(f"Identified weaknesses: {final_dir / 'review' / 'identified_weaknesses.md'}")
+    except Exception as exc:
+        print(f"Review failed; paper draft is still available. Reason: {exc}")
+
+    print(f"\nDone. Final draft: {final_paper}")
 
 if __name__ == "__main__":
     main()
