@@ -133,13 +133,21 @@ def search_arxiv(query: str, limit: int = 10) -> list[dict]:
                 "max_results": limit,
                 "sortBy": "relevance"
             },
-            timeout=30
+            timeout=60
         )
 
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(response.text)
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        if response.status_code != 200:
+            print(f"arXiv error: HTTP {response.status_code}")
+            return []
 
+        import xml.etree.ElementTree as ET
+        try:
+            root = ET.fromstring(response.text)
+        except ET.ParseError:
+            print(f"arXiv error: invalid response")
+            return []
+
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
         papers = []
         for entry in root.findall("atom:entry", ns):
             abstract = entry.findtext("atom:summary", "", ns).strip()
