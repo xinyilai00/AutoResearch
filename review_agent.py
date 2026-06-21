@@ -9,7 +9,7 @@ from pathlib import Path
 
 import requests
 
-from config import AGENT_ID, API_KEY, BASE_URL, PRINCIPAL_ID
+from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 
 @dataclass
@@ -39,10 +39,14 @@ def run_agent_prompt(user_input: str) -> str:
         "Authorization": f"Bearer {API_KEY}",
         "X-Principal-Id": PRINCIPAL_ID,
     }
+    
     body = {
         "agentId": AGENT_ID,
         "userInput": user_input,
     }
+
+    if SEND_MODEL_TO_AGENT_API and MODEL:
+        body["model"] = MODEL
 
     last_error: Exception | None = None
     for attempt in range(1, 4):
@@ -64,6 +68,8 @@ def run_agent_prompt(user_input: str) -> str:
         except RuntimeError as exc:
             last_error = exc
             print(f"Review API stream failed on attempt {attempt}/3: {exc}")
+            if "without returning text" in str(exc):
+                break
             if attempt < 3:
                 time.sleep(5 * attempt)
 
@@ -160,6 +166,33 @@ def list_strings(value: object) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def fallback_review(reason: str) -> Review:
+    return Review(
+        score=ReviewScore(
+            novelty=2,
+            correctness=2,
+            evidence=1,
+            clarity=2,
+            reproducibility=1,
+        ),
+        strengths=[
+            "The draft preserves the expected research-paper structure.",
+            "The draft avoids treating missing upstream experiments as completed evidence.",
+        ],
+        weaknesses=[
+            f"Live review could not be completed: {reason}",
+            "Citation verification could not be performed automatically.",
+            "Statistical claims could not be cross-checked against completed experiment outputs.",
+            "Experiment strength remains provisional until proposal and experiment stages produce real results.",
+        ],
+        revision_plan=[
+            "Keep all unverified claims explicitly marked as provisional or TODO.",
+            "Avoid adding numerical results unless they come from the Experiment stage.",
+            "Re-run review_agent.py when the API stream returns text again.",
+        ],
+    )
+
+
 def review_draft(draft: str) -> Review:
     prompt = f"""Review this research paper draft.
 
@@ -189,21 +222,17 @@ Check specifically for:
 Draft:
 {draft}
 """
-    raw = run_agent_prompt(prompt)
+    try:
+        raw = run_agent_prompt(prompt)
+    except Exception as exc:
+        print(f"Review API unavailable; using local fallback review. Reason: {exc}")
+        return fallback_review(str(exc))
+
     try:
         data = parse_json_object(raw)
     except Exception as exc:
         print(f"Review JSON parse failed; using fallback review. Reason: {exc}")
-        data = {
-            "novelty": 2,
-            "correctness": 2,
-            "evidence": 1,
-            "clarity": 2,
-            "reproducibility": 1,
-            "strengths": ["The draft exists and has a paper-like structure."],
-            "weaknesses": ["The review model did not return valid JSON."],
-            "revision_plan": ["Re-run review or manually inspect unsupported claims."],
-        }
+        return fallback_review(f"Review model did not return valid JSON: {exc}")
 
     score = ReviewScore(
         novelty=clamp_score(data.get("novelty")),
@@ -238,7 +267,16 @@ Review:
 Draft:
 {draft}
 """
-    return run_agent_prompt(prompt)
+    try:
+        return run_agent_prompt(prompt)
+    except Exception as exc:
+        print(f"Revision API unavailable; keeping draft with local review note. Reason: {exc}")
+        note = "\n\n## Automated Review Note\n"
+        note += "The live revision API was unavailable, so this draft has not been rewritten by the Review agent. "
+        note += "The remaining weaknesses file lists the conservative local review findings.\n"
+        if "## Automated Review Note" in draft:
+            return draft
+        return draft.rstrip() + note
 
 
 def format_review(review: Review) -> str:

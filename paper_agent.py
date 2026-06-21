@@ -9,10 +9,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import AGENT_ID, API_KEY, BASE_URL, PRINCIPAL_ID
+from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 
-DEFAULT_MODEL = os.environ.get("PAPER_AGENT_MODEL", "gpt-4.1")
+DEFAULT_MODEL = os.environ.get("PAPER_AGENT_MODEL", MODEL)
 DEFAULT_BASE_URL = BASE_URL or "https://api.openai.com/v1"
 
 
@@ -92,6 +92,9 @@ class AICompatibleModel(ChatModel):
             "agentId": self.agent_id,
             "userInput": f"{system}\n\n{user}",
         }
+
+        if SEND_MODEL_TO_AGENT_API and self.model:
+            body["model"] = self.model
 
         last_error: Exception | None = None
         for attempt in range(1, 4):

@@ -1,4 +1,4 @@
-from config import BASE_URL, API_KEY, AGENT_ID, PRINCIPAL_ID
+from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 import requests
 import json
@@ -67,6 +67,9 @@ def run_pi_agent(user_topic):
         "agentId": AGENT_ID,
         "userInput": PI_SYSTEM_PROMPT + "\n\nResearch topic: " + user_topic
     }
+
+    if SEND_MODEL_TO_AGENT_API and MODEL:
+        body["model"] = MODEL
 
     response = requests.post(
         f"{BASE_URL}/api/agent/run/async",

@@ -1,0 +1,1 @@
+Can chain-of-thought prompting combined with iterative self-consistency checking significantly improve LLMs' detection of logical errors in their own multi-step scientific reasoning, compared to single-pass generation, when evaluated against expert-annotated error labels across biology, physics, and social science reasoning tasks?
