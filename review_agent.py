@@ -55,7 +55,7 @@ def run_agent_prompt(user_input: str) -> str:
                 f"{BASE_URL.rstrip('/')}/api/agent/run/async",
                 headers=headers,
                 json=body,
-                timeout=180,
+                timeout=(60, 300),
             )
             response.raise_for_status()
             request_id = response.json()["data"]["requestId"]
@@ -194,19 +194,32 @@ def fallback_review(reason: str) -> Review:
 
 
 def review_draft(draft: str) -> Review:
-    prompt = f"""Review this research paper draft.
+    prompt = f"""You are a strict JSON generator.
 
-Return ONLY valid JSON with this exact schema:
+Your entire response must be one valid JSON object.
+Do not include markdown.
+Do not include explanations.
+Do not include ```json fences.
+Do not include text before or after the JSON.
+
+Use exactly this schema:
 {{
-  "novelty": 1-5,
-  "correctness": 1-5,
-  "evidence": 1-5,
-  "clarity": 1-5,
-  "reproducibility": 1-5,
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "revision_plan": ["..."]
+  "novelty": 1,
+  "correctness": 1,
+  "evidence": 1,
+  "clarity": 1,
+  "reproducibility": 1,
+  "strengths": ["one concrete strength"],
+  "weaknesses": ["one concrete weakness"],
+  "revision_plan": ["one concrete revision step"]
 }}
+
+Rules:
+- Scores must be integers from 1 to 5.
+- Every list must contain strings.
+- If evidence is missing, say so in weaknesses.
+- If citations are unverified, say so in weaknesses.
+- Return JSON only.
 
 Check specifically for:
 - unsupported claims
@@ -219,7 +232,7 @@ Check specifically for:
 - result/discussion leakage
 - visual provenance problems
 
-Draft:
+Review this draft:
 {draft}
 """
     try:
@@ -338,11 +351,13 @@ def run_review_agent(draft: str, output_dir: str | Path = "paper_runs/latest/rev
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     current_draft = draft
+    latest_review: Review | None = None
 
     try:
         for round_number in range(1, rounds + 1):
             print(f"Review round {round_number}...")
             review = review_draft(current_draft)
+            latest_review = review
             (output_path / f"review_round_{round_number:02d}.md").write_text(
                 format_review(review),
                 encoding="utf-8",
@@ -355,8 +370,7 @@ def run_review_agent(draft: str, output_dir: str | Path = "paper_runs/latest/rev
                 encoding="utf-8",
             )
 
-        print("Final review after revisions...")
-        final_review = review_draft(current_draft)
+        final_review = latest_review or fallback_review("No review round completed.")
     except Exception as exc:
         return fallback_review_output(output_path, current_draft, str(exc))
 
