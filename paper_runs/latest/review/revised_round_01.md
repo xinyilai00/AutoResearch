@@ -1,1 +1,1 @@
-Now I'll conduct the bibliographic audit by searching for the key references to verify them.
+I'll analyze the review weaknesses systematically and produce a complete revised paper. Let me first plan the revision, then write the full document.

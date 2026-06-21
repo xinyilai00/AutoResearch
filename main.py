@@ -144,7 +144,7 @@ def main():
 
     print("\n--- Review Agent ---")
     try:
-        review_dir = run_review_from_file(final_paper, final_dir / "review")
+        review_dir = run_review_from_file(final_paper, final_dir / "review", rounds=1)
         print(f"Reviewed draft: {review_dir / 'reviewed_draft.md'}")
         print(f"Remaining weaknesses: {review_dir / 'remaining_weaknesses.md'}")
     except Exception as exc:

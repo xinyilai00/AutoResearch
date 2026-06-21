@@ -1,9 +1,9 @@
- AI self-correction and error detection in scientific reasoning and conclusions
+ query: artificial intelligence self-evaluation error detection scientific reasoning reliability calibration
 
 Alternative queries:
-1. large language model self-critique and self-verification of factual accuracy
-2. artificial intelligence confidence calibration and epistemic uncertainty estimation in scientific domains
-3. automated detection of AI hallucination and erroneous scientific claims
-4. machine learning model introspection and reliability assessment of generated scientific outputs
+1. large language models self-correction hallucination detection scientific conclusions
+2. AI uncertainty quantification confidence estimation scientific inference validity
+3. machine learning epistemic uncertainty self-assessment scientific claim verification
+4. AI systems metacognition error recognition scientific output reliability
 
-Key terms: AI self-correction, self-critique, error detection, hallucination detection, confidence calibration, epistemic uncertainty, scientific reasoning verification, factual consistency, model introspection, uncertainty quantification
+Key terms: AI self-evaluation, error detection, scientific reasoning, uncertainty quantification, hallucination detection, model calibration, self-correction, confidence estimation, large language models, epistemic uncertainty
