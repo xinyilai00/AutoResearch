@@ -1,4 +1,4 @@
-from config import BASE_URL, API_KEY, AGENT_ID, PRINCIPAL_ID
+from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 import requests
 import json
@@ -250,23 +250,34 @@ def get_response(request_id: str) -> str:
         "Authorization": f"Bearer {API_KEY}",
         "X-Principal-Id": PRINCIPAL_ID
     }
+    full_response = ""
     response = requests.get(
         f"{BASE_URL}/api/agent/run/stream",
         headers=headers,
         params={"requestId": request_id},
-        stream=True
+        stream=True,
+        timeout=(30, 300),
     )
-    full_response = ""
-    for line in response.iter_lines():
-        if line:
-            decoded = line.decode("utf-8")
-            if decoded.startswith("data:"):
-                try:
-                    data = json.loads(decoded[5:])
-                    if data.get("eventType") == "TEXT_DELTA":
-                        full_response += data.get("data", {}).get("text", "")
-                except:
-                    pass
+    response.raise_for_status()
+
+    try:
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            try:
+                data = json.loads(line[5:])
+            except json.JSONDecodeError:
+                continue
+
+            event_type = data.get("eventType")
+            if event_type in {"TEXT_START", "TEXT_DELTA"}:
+                full_response += data.get("data", {}).get("text", "")
+            if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
+                if full_response.strip():
+                    break
+    except requests.exceptions.RequestException:
+        if not full_response.strip():
+            raise
     
     for i in range(1, len("RELEVANT METHODOLOGIES")):
         if full_response.startswith("RELEVANT METHODOLOGIES"[i:]):
@@ -290,6 +301,10 @@ def run_deep_literature_agent(papers_text: str, research_question: str) -> str:
             + f"\n\nPapers retrieved:\n{papers_text}"
         )
     }
+    
+    if SEND_MODEL_TO_AGENT_API and MODEL:
+        body["model"] = MODEL
+
     response = requests.post(
         f"{BASE_URL}/api/agent/run/async",
         headers=headers,
