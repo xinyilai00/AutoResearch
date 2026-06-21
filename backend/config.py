@@ -3,7 +3,10 @@ from dotenv import load_dotenv
 
 from pathlib import Path
 
-load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+BACKEND_DIR = Path(__file__).parent
+PROJECT_ROOT = BACKEND_DIR.parent
+
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 BASE_URL = os.getenv("BASE_URL")
 API_KEY = os.getenv("API_KEY")
