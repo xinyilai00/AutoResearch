@@ -9,6 +9,7 @@ from paper_agent import run_agent as run_paper_agent
 from pi_agent import run_pi_agent
 from pipeline_state import PipelineState, compose_feedback_prompt
 from proposal_agent import run_proposal_stage
+from research_question_agent import run_research_question_stage
 from review_agent import run_review_from_file
 
 
@@ -27,6 +28,8 @@ def apply_stage_feedback(
         output = rerun_literature_with_feedback(state, feedback_text)
     elif stage == "deep_literature":
         output = rerun_deep_literature_with_feedback(state, feedback_text)
+    elif stage == "research_questions":
+        output = rerun_research_questions_with_feedback(state, feedback_text)
     elif stage == "research_question":
         return state.write_stage_output("research_question", feedback_text, status="revised")
     elif stage == "proposal":
@@ -48,6 +51,9 @@ def normalize_stage_name(stage: str) -> str:
         "part1_literature": "literature",
         "deep-lit": "deep_literature",
         "deep_lit": "deep_literature",
+        "candidate_questions": "research_questions",
+        "candidate_research_questions": "research_questions",
+        "research-questions": "research_questions",
         "research-question": "research_question",
     }
     key = stage.strip().lower().replace(" ", "_")
@@ -97,6 +103,21 @@ def rerun_deep_literature_with_feedback(state: PipelineState, feedback_text: str
     return run_deep_literature_stage(revised_question_context)
 
 
+def rerun_research_questions_with_feedback(state: PipelineState, feedback_text: str) -> str:
+    topic = state.get_metadata("topic")
+    literature = state.read_active_output("literature")
+    previous = state.read_active_output("research_questions")
+    if not topic or not literature:
+        raise ValueError("Cannot rerun Research Questions because topic or Literature output is missing.")
+    revised_literature_context = compose_feedback_prompt(
+        original_input=literature,
+        previous_output=previous,
+        feedback=feedback_text,
+        instruction="Revise the candidate research questions according to the feedback.",
+    )
+    return run_research_question_stage(topic, revised_literature_context)
+
+
 def rerun_proposal_with_feedback(state: PipelineState, feedback_text: str) -> str:
     question = state.read_active_output("research_question")
     deep_lit = state.read_active_output("deep_literature")
@@ -131,6 +152,8 @@ def rerun_paper_with_feedback(state: PipelineState, feedback_text: str) -> Path:
             str(state.active_path("pi") or ""),
             "--part1-literature",
             str(state.active_path("literature") or ""),
+            "--research-questions",
+            str(state.active_path("research_questions") or ""),
             "--research-question",
             str(state.active_path("research_question") or ""),
             "--deep-literature",

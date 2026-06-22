@@ -1,1 +1,0 @@
-Can a structured self-falsification prompting protocol (where an LLM is instructed to systematically attempt to disprove its own scientific hypotheses) achieve higher error-detection rates than standard confidence-scoring approaches, when evaluated against known ground-truth scientific facts?

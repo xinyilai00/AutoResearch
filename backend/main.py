@@ -7,28 +7,9 @@ from lit_agent_p2 import run_deep_literature_stage
 from pi_agent import run_pi_agent
 from pipeline_state import PipelineState
 from proposal_agent import run_proposal_stage
+from research_question_agent import parse_candidate_research_questions
+from research_question_agent import run_research_question_stage
 from review_agent import run_review_from_file
-
-def parse_research_questions(lit_output: str) -> list[str]:
-    questions = []
-    in_questions_section = False
-    
-    for line in lit_output.splitlines():
-        line = line.strip()
-        
-        if "CANDIDATE RESEARCH QUESTIONS" in line.upper():
-            in_questions_section = True
-            continue
-        
-        if in_questions_section and line and line[0].isdigit() and (". " in line or ") " in line):
-            if ". " in line:
-                q = line.split(". ", 1)[1].strip()
-            else:
-                q = line.split(") ", 1)[1].strip()
-            if len(q) > 30:
-                questions.append(q)
-    
-    return questions
 
 def user_selection(questions: list[str]) -> str:
     """Display questions and get user selection."""
@@ -88,11 +69,16 @@ def main():
     lit_path = state.write_stage_output("literature", lit_output)
     print(lit_output)
 
-    questions = parse_research_questions(lit_output)
+    print("\n--- Research Question Agent ---")
+    research_questions_output = run_research_question_stage(topic, lit_path)
+    research_questions_path = state.write_stage_output("research_questions", research_questions_output)
+    print(research_questions_output)
+
+    questions = parse_candidate_research_questions(research_questions_output)
 
     if not questions:
         print("\nCould not parse research questions. Paper agent will use a provisional question.")
-        selected_question = "No selected research question was parsed; infer a provisional question from the literature output."
+        selected_question = "No selected research question was parsed; infer a provisional question from the research question output."
     else:
         selected_question = user_selection(questions)
     if "| Gap addressed:" in selected_question:
@@ -130,6 +116,8 @@ def main():
             str(pi_path),
             "--part1-literature",
             str(lit_path),
+            "--research-questions",
+            str(research_questions_path),
             "--research-question",
             str(selected_question_path),
             "--deep-literature",
