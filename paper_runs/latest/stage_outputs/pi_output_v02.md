@@ -1,9 +1,9 @@
-: artificial intelligence machine learning applications in stock market prediction and algorithmic trading
+ query: gambling and adolescent mental health outcomes psychological distress
 
 Alternative queries:
-1. deep learning neural networks for stock price forecasting and financial time series analysis
-2. natural language processing sentiment analysis for equity market prediction and trading strategies
-3. reinforcement learning portfolio optimization and automated trading systems in financial markets
-4. machine learning models for stock market volatility prediction and risk management
+1. problem gambling youth mental health depression anxiety
+2. adolescent gambling disorder psychological wellbeing teenage
+3. online gambling teenagers mental health risk factors
+4. youth gambling behavior emotional health comorbidity
 
-Key terms: artificial intelligence, machine learning, deep learning, stock market prediction, algorithmic trading, financial forecasting, sentiment analysis, portfolio optimization, reinforcement learning, natural language processing
+Key terms: gambling, adolescent, mental health, problem gambling, psychological distress, depression, anxiety, youth, gambling disorder, online gambling

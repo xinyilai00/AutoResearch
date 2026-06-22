@@ -1,0 +1,84 @@
+{
+  "active_outputs": {
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v05.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v05.md",
+    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v02.md"
+  },
+  "stage_status": {
+    "pi": "generated",
+    "literature": "generated",
+    "research_questions": "generated"
+  },
+  "versions": {
+    "pi": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v01.md",
+        "status": "generated"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v04.md",
+        "status": "generated"
+      },
+      {
+        "version": 5,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v05.md",
+        "status": "generated"
+      }
+    ],
+    "literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v01.md",
+        "status": "generated"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v04.md",
+        "status": "generated"
+      },
+      {
+        "version": 5,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v05.md",
+        "status": "generated"
+      }
+    ],
+    "research_questions": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v01.md",
+        "status": "generated"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v02.md",
+        "status": "generated"
+      }
+    ]
+  },
+  "feedback": {},
+  "metadata": {
+    "topic": "Coffee in teenager mental health"
+  }
+}

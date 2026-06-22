@@ -40,9 +40,14 @@ CANDIDATE RESEARCH QUESTIONS:
 
 
 def read_text_or_path(value: str | Path) -> str:
+    if isinstance(value, str) and len(value) > 500:
+        return value
     path = Path(value)
-    if path.exists():
-        return path.read_text(encoding="utf-8")
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except OSError:
+        pass
     return str(value)
 
 
