@@ -319,6 +319,7 @@ def get_response(request_id: str) -> str:
         stream=True,
         timeout=(30, 300),
     )
+    response.encoding = "utf-8"
     response.raise_for_status()
 
     try:

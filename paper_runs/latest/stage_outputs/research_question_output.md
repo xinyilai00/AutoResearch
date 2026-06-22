@@ -1,1 +1,0 @@
-To what extent can token-level probability distributions and self-reported confidence scores from large language models serve as reliable predictors of incorrect scientific conclusions, when evaluated against ground-truth answers in public scientific question-answering benchmarks?
