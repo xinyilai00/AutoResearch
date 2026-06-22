@@ -25,7 +25,7 @@ export default function DashboardPage({ autonomous, setAutonomous }) {
         </p>
       </div>
 
-      <button className="start-button" onClick={() => navigate("/pi")}>
+      <button className="start-button" onClick={() => navigate("/topic")}>
         Start Pipeline
       </button>
     </div>

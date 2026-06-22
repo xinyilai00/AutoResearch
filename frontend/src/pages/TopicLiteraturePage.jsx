@@ -2,13 +2,14 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-export default function PiPage({ autonomous, onComplete }) {
+export default function TopicLiteraturePage({ autonomous, onComplete }) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState("");
   const [output, setOutput] = useState("");
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
 
   async function handleRun(feedback = null) {
     if (!topic.trim()) return;
@@ -16,9 +17,11 @@ export default function PiPage({ autonomous, onComplete }) {
     setDone(false);
     setRunning(true);
     setError("");
+    setStatus("Researching...");
 
     try {
-      const response = await fetch("http://localhost:8000/api/stages/pi/run", {
+      // Step 1 — Run PI agent behind the scenes
+      const piResponse = await fetch("http://localhost:8000/api/stages/pi/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -27,17 +30,38 @@ export default function PiPage({ autonomous, onComplete }) {
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+      if (!piResponse.ok) {
+        throw new Error(`PI agent error: ${piResponse.status}`);
       }
 
-      const data = await response.json();
-      const fullOutput = data.output || "";
+      const piData = await piResponse.json();
+      const piOutput = piData.output || "";
+
+      // Step 2 — Run Literature agent with PI output
+      setStatus("Generating literature review...");
+      const litResponse = await fetch("http://localhost:8000/api/stages/literature/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic,
+          pi_output: piOutput,
+          feedback: feedback
+        })
+      });
+
+      if (!litResponse.ok) {
+        throw new Error(`Literature agent error: ${litResponse.status}`);
+      }
+
+      const litData = await litResponse.json();
+      const fullOutput = litData.output || "";
       setOutput(fullOutput);
       onComplete(fullOutput);
       setDone(true);
+      setStatus("");
     } catch (err) {
       setError(`Something went wrong: ${err.message}`);
+      setStatus("");
     } finally {
       setRunning(false);
     }
@@ -46,7 +70,7 @@ export default function PiPage({ autonomous, onComplete }) {
   useEffect(() => {
     if (done && autonomous) {
       const timer = setTimeout(() => {
-        navigate("/literature");
+        navigate("/research-question");
       }, 1500);
       return () => clearTimeout(timer);
     }
@@ -54,8 +78,8 @@ export default function PiPage({ autonomous, onComplete }) {
 
   return (
     <div className="stage-page">
-      <h1>PI Agent</h1>
-      <p>Enter your research topic. The PI agent will generate structured search queries for the literature review.</p>
+      <h1>Topic & Literature</h1>
+      <p>Enter your research topic. We'll search academic databases and identify research gaps automatically.</p>
 
       <div className="input-row">
         <input
@@ -71,9 +95,11 @@ export default function PiPage({ autonomous, onComplete }) {
           onClick={() => handleRun()}
           disabled={running || !topic.trim()}
         >
-          {running ? "Running..." : "Run PI Agent"}
+          {running ? "Running..." : "Run"}
         </button>
       </div>
+
+      {status && <p className="auto-note">{status}</p>}
 
       {error && (
         <div className="warning-box">
@@ -90,8 +116,8 @@ export default function PiPage({ autonomous, onComplete }) {
       {done && !autonomous && (
         <>
           <FeedbackBar onRerun={(feedback) => handleRun(feedback)} disabled={running} />
-          <button className="start-button" style={{ marginTop: "16px" }} onClick={() => navigate("/literature")}>
-            Continue to Literature →
+          <button className="start-button" style={{ marginTop: "16px" }} onClick={() => navigate("/research-question")}>
+            Continue to Research Question →
           </button>
         </>
       )}
