@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lit_agent_p1 import run_literature_stage
-from lit_agent_p2 import run_deep_literature_stage
-from paper_agent import parse_args as parse_paper_args
-from paper_agent import run_agent as run_paper_agent
-from pi_agent import run_pi_agent
-from pipeline_state import PipelineState, compose_feedback_prompt
-from proposal_agent import run_proposal_stage
-from research_question_agent import run_research_question_stage
-from review_agent import run_review_from_file
+from backend.experiment_agent import run_experiment_stage
+from backend.lit_agent_p1 import run_literature_stage
+from backend.lit_agent_p2 import run_deep_literature_stage
+from backend.paper_agent import parse_args as parse_paper_args
+from backend.paper_agent import run_agent as run_paper_agent
+from backend.pi_agent import run_pi_agent
+from backend.pipeline_state import PipelineState, compose_feedback_prompt
+from backend.proposal_agent import run_proposal_stage
+from backend.research_question_agent import run_research_question_stage
+from backend.review_agent import run_review_from_file
 
 
 def apply_stage_feedback(
@@ -34,6 +35,8 @@ def apply_stage_feedback(
         return state.write_stage_output("research_question", feedback_text, status="revised")
     elif stage == "proposal":
         output = rerun_proposal_with_feedback(state, feedback_text)
+    elif stage == "experiment":
+        output = rerun_experiment_with_feedback(state, feedback_text)
     elif stage == "paper":
         return rerun_paper_with_feedback(state, feedback_text)
     elif stage == "review":
@@ -131,6 +134,23 @@ def rerun_proposal_with_feedback(state: PipelineState, feedback_text: str) -> st
         instruction="Revise the experiment proposal according to the feedback while preserving verified public-data constraints.",
     )
     return run_proposal_stage(question, revised_deep_lit_context)
+
+
+def rerun_experiment_with_feedback(state: PipelineState, feedback_text: str) -> str:
+    proposal = state.read_active_output("proposal")
+    previous = state.read_active_output("experiment")
+    if not proposal:
+        raise ValueError("Cannot rerun Experiment because proposal output is missing.")
+    revised_proposal_context = compose_feedback_prompt(
+        original_input=proposal,
+        previous_output=previous,
+        feedback=feedback_text,
+        instruction=(
+            "Revise only the execution instructions needed by the Experiment Agent. "
+            "Do not invent results; run the experiment only if the proposal contains an executable dataset spec."
+        ),
+    )
+    return run_experiment_stage(revised_proposal_context, state.run_dir / "experiment")
 
 
 def rerun_paper_with_feedback(state: PipelineState, feedback_text: str) -> Path:
