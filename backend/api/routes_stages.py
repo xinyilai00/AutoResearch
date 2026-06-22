@@ -1,36 +1,37 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from feedback import apply_stage_feedback, normalize_stage_name
-from lit_agent_p1 import run_literature_stage
-from lit_agent_p2 import run_deep_literature_stage
-from paper_agent import parse_args as parse_paper_args
-from paper_agent import run_agent as run_paper_agent
-from pi_agent import run_pi_agent
-from pipeline_state import PipelineState
-from proposal_agent import run_proposal_stage
-from research_question_agent import run_research_question_stage
-from review_agent import run_review_from_file
+from backend.feedback import apply_stage_feedback, normalize_stage_name
+from backend.lit_agent_p1 import run_literature_stage
+from backend.lit_agent_p2 import run_deep_literature_stage
+from backend.paper_agent import parse_args as parse_paper_args
+from backend.paper_agent import run_agent as run_paper_agent
+from backend.pi_agent import run_pi_agent
+from backend.pipeline_state import PipelineState
+from backend.proposal_agent import run_proposal_stage
+from backend.research_question_agent import run_research_question_stage
+from backend.review_agent import run_review_from_file
 
 
 router = APIRouter()
 
 
 class StageRunRequest(BaseModel):
-    topic: str | None = None
-    feedback: str | None = None
-    pi_output: str | None = None
-    literature: str | None = None
-    research_questions: str | None = None
-    research_question: str | None = None
-    deep_literature: str | None = None
-    proposal: str | None = None
-    experiment: str | None = None
-    paper: str | None = None
+    topic: Optional[str] = None
+    feedback: Optional[str] = None
+    pi_output: Optional[str] = None
+    literature: Optional[str] = None
+    research_questions: Optional[str] = None
+    research_question: Optional[str] = None
+    deep_literature: Optional[str] = None
+    proposal: Optional[str] = None
+    experiment: Optional[str] = None
+    paper: Optional[str] = None
     run_dir: str = "paper_runs/latest"
 
 
