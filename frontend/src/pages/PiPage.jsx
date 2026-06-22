@@ -2,42 +2,45 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunPiAgent(topic, feedback, onChunk) {
-  const fakeOutput = `Primary search query: ${topic} machine learning applications
-
-Alternative queries: ${topic} deep learning, ${topic} neural networks, ${topic} artificial intelligence, ${topic} computational methods
-
-Key terms: machine learning, neural networks, deep learning, data analysis, computational methods, prediction, modeling, optimization, evaluation, benchmarking${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
-
-  const words = fakeOutput.split(" ");
-  for (const word of words) {
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    onChunk(word + " ");
-  }
-}
-
 export default function PiPage({ autonomous, onComplete }) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState("");
   const [output, setOutput] = useState("");
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleRun(feedback = null) {
     if (!topic.trim()) return;
     setOutput("");
     setDone(false);
     setRunning(true);
+    setError("");
 
-    let fullOutput = "";
-    await mockRunPiAgent(topic, feedback, (chunk) => {
-      fullOutput += chunk;
-      setOutput((prev) => prev + chunk);
-    });
+    try {
+      const response = await fetch("http://localhost:8000/api/stages/pi/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic,
+          feedback: feedback
+        })
+      });
 
-    onComplete(fullOutput);
-    setRunning(false);
-    setDone(true);
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const fullOutput = data.output || "";
+      setOutput(fullOutput);
+      onComplete(fullOutput);
+      setDone(true);
+    } catch (err) {
+      setError(`Something went wrong: ${err.message}`);
+    } finally {
+      setRunning(false);
+    }
   }
 
   useEffect(() => {
@@ -71,6 +74,12 @@ export default function PiPage({ autonomous, onComplete }) {
           {running ? "Running..." : "Run PI Agent"}
         </button>
       </div>
+
+      {error && (
+        <div className="warning-box">
+          {error}
+        </div>
+      )}
 
       {output && (
         <div className="output-box">

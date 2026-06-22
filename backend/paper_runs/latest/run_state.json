@@ -1,0 +1,26 @@
+{
+  "active_outputs": {
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v02.md"
+  },
+  "stage_status": {
+    "pi": "generated"
+  },
+  "versions": {
+    "pi": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v01.md",
+        "status": "generated"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v02.md",
+        "status": "generated"
+      }
+    ]
+  },
+  "feedback": {},
+  "metadata": {
+    "topic": "AI in sportsbetting"
+  }
+}
