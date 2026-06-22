@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.feedback import apply_stage_feedback, normalize_stage_name
+from backend.experiment_agent import run_experiment_stage
 from backend.lit_agent_p1 import run_literature_stage
 from backend.lit_agent_p2 import run_deep_literature_stage
 from backend.paper_agent import parse_args as parse_paper_args
@@ -130,11 +131,12 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         return state.write_stage_output("proposal", output)
 
     if stage == "experiment":
-        output = request.experiment or (
-            "Experiment placeholder: experiment execution and results are pending. "
-            "Do not report completed findings."
-        )
-        return state.write_stage_output("experiment", output, status="placeholder")
+        proposal = request.proposal or state.read_active_output("proposal")
+        if not proposal:
+            raise ValueError("Experiment stage requires proposal output.")
+        output = run_experiment_stage(proposal, state.run_dir / "experiment")
+        status = "redesign_needed" if "REDESIGN_NEEDED" in output else "generated"
+        return state.write_stage_output("experiment", output, status=status)
 
     if stage == "paper":
         return run_paper_stage(request, state)

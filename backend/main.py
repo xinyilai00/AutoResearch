@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from experiment_agent import run_experiment_stage
 from paper_agent import parse_args as parse_paper_args
 from paper_agent import run_agent as run_paper_agent
 from lit_agent_p1 import run_literature_stage
@@ -101,12 +102,12 @@ def main():
     proposal_path = state.write_stage_output("proposal", proposal_output)
     print(proposal_output)
     
-    experiment_path = state.write_stage_output(
-        "experiment",
-        "Experiment placeholder: experiment execution and results are pending. Do not report completed findings.",
-        status="placeholder",
-    )
-
+    print("\n--- Experiment Agent ---")
+    experiment_output = run_experiment_stage(proposal_path, output_dir / "experiment")
+    experiment_status = "redesign_needed" if "REDESIGN_NEEDED" in experiment_output else "generated"
+    experiment_path = state.write_stage_output("experiment", experiment_output, status=experiment_status)
+    print(experiment_output)
+    return
     print("\n--- Paper Agent ---")
     paper_args = parse_paper_args(
         [
