@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function StageCard({ name, status = "pending" }) {
   return (
     <section className="stage-card">

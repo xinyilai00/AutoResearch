@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function CitationsPage() {
   return (
     <main className="page">

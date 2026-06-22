@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function RebuttalPage() {
   return (
     <main className="page">
