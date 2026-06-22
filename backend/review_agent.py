@@ -86,7 +86,7 @@ def read_agent_stream(request_id: str) -> str:
         headers=headers,
         params={"requestId": request_id},
         stream=True,
-        timeout=(30, 300),
+        timeout=(60, 300),
     )
     response.raise_for_status()
 
