@@ -13,6 +13,7 @@ from paper_agent import run_agent as run_paper_agent
 from pi_agent import run_pi_agent
 from pipeline_state import PipelineState
 from proposal_agent import run_proposal_stage
+from research_question_agent import run_research_question_stage
 from review_agent import run_review_from_file
 
 
@@ -23,6 +24,8 @@ class StageRunRequest(BaseModel):
     topic: str | None = None
     feedback: str | None = None
     pi_output: str | None = None
+    literature: str | None = None
+    research_questions: str | None = None
     research_question: str | None = None
     deep_literature: str | None = None
     proposal: str | None = None
@@ -96,6 +99,14 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         output = run_literature_stage(pi_output, topic)
         return state.write_stage_output("literature", output)
 
+    if stage == "research_questions":
+        topic = request.topic or state.get_metadata("topic")
+        literature = request.literature or state.read_active_output("literature")
+        if not topic or not literature:
+            raise ValueError("Research Questions stage requires topic and literature output.")
+        output = run_research_question_stage(topic, literature)
+        return state.write_stage_output("research_questions", output)
+
     if stage == "research_question":
         question = request.research_question
         if not question:
@@ -143,6 +154,8 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
         str(state.active_path("pi") or ""),
         "--part1-literature",
         str(state.active_path("literature") or ""),
+        "--research-questions",
+        str(state.active_path("research_questions") or ""),
         "--research-question",
         str(state.active_path("research_question") or ""),
         "--deep-literature",

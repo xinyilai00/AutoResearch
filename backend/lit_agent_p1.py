@@ -18,19 +18,11 @@ Your job is to:
    - Topics that HAVE been studied but not with certain methods, datasets, or analytical approaches
    - Contradictions between papers that need resolution
    - Underexplored angles on well-studied questions
-3. Generate exactly 5-10 candidate research questions that could fill these gaps 
-
 
 RULES: 
-- Each research question must be grounded in the literature (reference specific gaps you found) 
-- Questions must be specific and testable/answerable through empirical research 
-- Do NOT repeat what has already been researched — focus on what's missing 
-- Rank questions from most to least promising
-- Each research question must be feasible for an AI to investigate autonomously — this means it must be answerable through computational methods (data analysis, statistical modeling, machine learning, simulation, etc.) using publicly available datasets or synthetically generated data
-- Do NOT propose questions that require physical experiments, lab equipment, human subjects, or proprietary data
+- Do NOT generate candidate research questions. A separate Research Question Agent will do that.
 - You MUST follow the output format exactly as specified — do not summarize, do not create tables, do not write to files, do not deviate in any way
-- You MUST output ALL candidate research questions in full, not just the top 3
-- DO NOT add any text before SUMMARY OF EXISTING WORK or after the last research question
+- DO NOT add any text before SUMMARY OF EXISTING WORK or after the last gap.
 
 OUTPUT — COPY THIS FORMAT EXACTLY, NO DEVIATIONS:
 
@@ -40,11 +32,6 @@ SUMMARY OF EXISTING WORK:
 GAPS:
 1. [gap 1]
 2. [gap 2]
-...
-
-CANDIDATE RESEARCH QUESTIONS:
-1. [question] | Gap addressed: [gap]
-2. [question] | Gap addressed: [gap]
 ...
 """
 

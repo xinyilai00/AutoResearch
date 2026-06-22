@@ -19,6 +19,7 @@ DEFAULT_BASE_URL = BASE_URL or "https://api.openai.com/v1"
 STAGE_PLACEHOLDERS = {
     "pi": "PI stage is not implemented yet. Treat the user prompt as the provisional structured search query.",
     "part1_literature": "Part 1 Literature stage is not implemented yet. Mark literature claims as TODO and do not invent citations.",
+    "research_questions": "Research Question stage is not implemented yet. Generate candidate questions before selecting a final one.",
     "research_question": "No selected research question was provided. Infer a narrow provisional question and label it provisional.",
     "deep_literature": "Deep Literature stage is not implemented yet. Identify methodologies, datasets, and prior results still needed.",
     "proposal": "Proposal stage is not implemented yet. Draft a provisional hypothesis, variables, design, and success criteria.",
@@ -353,6 +354,7 @@ def collect_stage_inputs(args: argparse.Namespace) -> dict[str, str]:
     cli_inputs = {
         "pi": args.pi_output,
         "part1_literature": args.part1_literature,
+        "research_questions": args.research_questions,
         "research_question": args.research_question,
         "deep_literature": args.deep_literature,
         "proposal": args.proposal,
@@ -371,6 +373,7 @@ def format_stage_inputs(stage_inputs: dict[str, str]) -> str:
     labels = {
         "pi": "PI Search Query",
         "part1_literature": "Part 1 Literature Review and Research Gaps",
+        "research_questions": "Candidate Research Questions",
         "research_question": "Selected Research Question",
         "deep_literature": "Deep Literature Review",
         "proposal": "Proposal and Hypothesis",
@@ -528,6 +531,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--run-pi", action="store_true", help="Run pi_agent.py and use its output.")
     parser.add_argument("--pi-output", help="PI search query output text or file path.")
     parser.add_argument("--part1-literature", help="Part 1 literature output text or file path.")
+    parser.add_argument("--research-questions", help="Candidate research questions output text or file path.")
     parser.add_argument("--research-question", help="Selected research question text or file path.")
     parser.add_argument("--deep-literature", help="Deep literature review output text or file path.")
     parser.add_argument("--proposal", help="Proposal/hypothesis output text or file path.")
