@@ -14,13 +14,6 @@ GAPS:
 3. No comprehensive benchmark comparing all major efficiency techniques
 4. Underexplored: efficiency tradeoffs in multilingual transformer models
 5. Missing longitudinal studies on model degradation over time
-
-CANDIDATE RESEARCH QUESTIONS:
-1. Can simultaneous pruning and quantization achieve better efficiency than either technique alone? | Gap addressed: gap 2
-2. How do transformer efficiency techniques perform across multilingual settings? | Gap addressed: gap 4
-3. What is the optimal compression ratio for edge device deployment without accuracy loss? | Gap addressed: gap 1
-4. Can a unified benchmark framework fairly compare all major transformer efficiency methods? | Gap addressed: gap 3
-5. How does model performance degrade over extended deployment periods? | Gap addressed: gap 5
 ${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
 
   const words = fakeOutput.split(" ");
@@ -28,12 +21,6 @@ ${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
     await new Promise((resolve) => setTimeout(resolve, 60));
     onChunk(word + " ");
   }
-}
-
-function trimToGaps(text) {
-  const cutoff = text.toUpperCase().indexOf("CANDIDATE RESEARCH QUESTIONS");
-  if (cutoff === -1) return text;
-  return text.slice(0, cutoff).trim();
 }
 
 export default function LiteraturePage({ autonomous, piOutput, onComplete }) {
@@ -67,8 +54,6 @@ export default function LiteraturePage({ autonomous, piOutput, onComplete }) {
     }
   }, [done, autonomous]);
 
-  const displayOutput = trimToGaps(output);
-
   return (
     <div className="stage-page">
       <h1>Literature Agent</h1>
@@ -92,9 +77,9 @@ export default function LiteraturePage({ autonomous, piOutput, onComplete }) {
         </div>
       )}
 
-      {displayOutput && (
+      {output && (
         <div className="output-box">
-          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{displayOutput}</div>
+          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{output}</div>
         </div>
       )}
 

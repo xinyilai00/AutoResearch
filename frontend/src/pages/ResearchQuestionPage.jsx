@@ -1,30 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-function parseQuestions(litOutput) {
-  const questions = [];
-  let inQuestionsSection = false;
-
-  for (const line of litOutput.splitlines ? litOutput.split("\n") : []) {
-    const trimmed = line.trim();
-
-    if (trimmed.toUpperCase().includes("CANDIDATE RESEARCH QUESTIONS")) {
-      inQuestionsSection = true;
-      continue;
-    }
-
-    if (inQuestionsSection && trimmed && /^\d+\./.test(trimmed)) {
-      let q = trimmed.replace(/^\d+\.\s*/, "");
-      if (q.includes("| Gap addressed:")) {
-        q = q.split("| Gap addressed:")[0].trim();
-      }
-      if (q.length > 10) {
-        questions.push(q);
-      }
-    }
-  }
-
-  return questions;
+async function mockGenerateQuestions() {
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  return [
+    "Can simultaneous pruning and quantization achieve better efficiency than either technique alone?",
+    "How do transformer efficiency techniques perform across multilingual settings?",
+    "What is the optimal compression ratio for edge device deployment without accuracy loss?",
+    "Can a unified benchmark framework fairly compare all major transformer efficiency methods?",
+    "How does model performance degrade over extended deployment periods?"
+  ];
 }
 
 export default function ResearchQuestionPage({ autonomous, litOutput, onComplete }) {
@@ -33,13 +18,17 @@ export default function ResearchQuestionPage({ autonomous, litOutput, onComplete
   const [selected, setSelected] = useState("");
   const [custom, setCustom] = useState("");
   const [useCustom, setUseCustom] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
 
-  console.log("litOutput received:", litOutput);
-  
   useEffect(() => {
     if (litOutput) {
-      const parsed = parseQuestions(litOutput);
-      setQuestions(parsed);
+      setLoading(true);
+      mockGenerateQuestions().then((qs) => {
+        setQuestions(qs);
+        setLoading(false);
+        setReady(true);
+      });
     }
   }, [litOutput]);
 
@@ -63,62 +52,64 @@ export default function ResearchQuestionPage({ autonomous, litOutput, onComplete
         </div>
       )}
 
-      {litOutput && (
-        <>
-          {questions.length > 0 && !useCustom && (
-            <div className="question-list">
-              {questions.map((q, i) => (
-                <div
-                  key={i}
-                  className={`question-item ${selected === q ? "selected" : ""}`}
-                  onClick={() => setSelected(q)}
-                >
-                  {i + 1}. {q}
-                </div>
-              ))}
+      {loading && <p className="auto-note">Generating research questions...</p>}
+
+      {ready && !useCustom && (
+        <div className="question-list">
+          {questions.map((q, i) => (
+            <div
+              key={i}
+              className={`question-item ${selected === q ? "selected" : ""}`}
+              onClick={() => setSelected(q)}
+            >
+              {i + 1}. {q}
             </div>
+          ))}
+        </div>
+      )}
+
+      {ready && (
+        <div className="custom-question">
+          <label>
+            <input
+              type="checkbox"
+              checked={useCustom}
+              onChange={() => {
+                setUseCustom(!useCustom);
+                setSelected("");
+              }}
+            />
+            {" "}Enter my own research question
+          </label>
+
+          {useCustom && (
+            <input
+              className="topic-input"
+              style={{ marginTop: "12px", width: "100%" }}
+              type="text"
+              placeholder="Type your research question..."
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+            />
           )}
+        </div>
+      )}
 
-          <div className="custom-question">
-            <label>
-              <input
-                type="checkbox"
-                checked={useCustom}
-                onChange={() => {
-                  setUseCustom(!useCustom);
-                  setSelected("");
-                }}
-              />
-              {" "}Enter my own research question
-            </label>
+      {finalQuestion && (
+        <div className="selected-preview">
+          <strong>Selected:</strong> {finalQuestion}
+        </div>
+      )}
 
-            {useCustom && (
-              <input
-                className="topic-input"
-                style={{ marginTop: "12px", width: "100%" }}
-                type="text"
-                placeholder="Type your research question..."
-                value={custom}
-                onChange={(e) => setCustom(e.target.value)}
-              />
-            )}
-          </div>
-
-          {finalQuestion && (
-            <div className="selected-preview">
-              <strong>Selected:</strong> {finalQuestion}
-            </div>
-          )}
-
-          <button
-            className="start-button"
-            style={{ marginTop: "16px" }}
-            onClick={handleConfirm}
-            disabled={!finalQuestion}
-          >
-            Confirm & Continue to Deep Literature →
-          </button>
-        </>
+      {ready && (
+        <button
+          className="start-button"
+          style={{ marginTop: "16px" }}
+          onClick={handleConfirm}
+          disabled={!finalQuestion}
+        >
+          Confirm & Continue to Deep Literature →
+        </button>
       )}
     </div>
   );
