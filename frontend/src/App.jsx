@@ -64,7 +64,7 @@ function Layout({ children }) {
 
 function App() {
   const [autonomous, setAutonomous] = useState(false);
-
+  const [topic, setTopic] = useState("");
   const [litOutput, setLitOutput] = useState("");
   const [selectedQuestion, setSelectedQuestion] = useState("");
   const [deepLitOutput, setDeepLitOutput] = useState("");
@@ -78,9 +78,8 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
-          <Route path="/topic" element={<TopicLiteraturePage autonomous={autonomous} onComplete={setLitOutput} />} />
-          <Route path="/research-question" element={<ResearchQuestionPage autonomous={autonomous} litOutput={litOutput} onComplete={setSelectedQuestion} />} />
-          <Route path="/deep-literature" element={<DeepLiteraturePage autonomous={autonomous} selectedQuestion={selectedQuestion} onComplete={setDeepLitOutput} />} />
+          <Route path="/topic" element={<TopicLiteraturePage autonomous={autonomous} onTopicSet={setTopic} onComplete={setLitOutput} />} />
+          <Route path="/research-question" element={<ResearchQuestionPage autonomous={autonomous} topic={topic} litOutput={litOutput} onComplete={setSelectedQuestion} />} />          <Route path="/deep-literature" element={<DeepLiteraturePage autonomous={autonomous} selectedQuestion={selectedQuestion} onComplete={setDeepLitOutput} />} />
           <Route path="/proposal" element={<ProposalPage autonomous={autonomous} deepLitOutput={deepLitOutput} onComplete={setProposalOutput} />} />
           <Route path="/experiment" element={<ExperimentPage autonomous={autonomous} proposalOutput={proposalOutput} onComplete={setExperimentOutput} />} />
           <Route path="/paper" element={<PaperPage autonomous={autonomous} experimentOutput={experimentOutput} onComplete={setPaperOutput} />} />

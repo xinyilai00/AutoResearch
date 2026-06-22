@@ -1,18 +1,35 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-async function mockGenerateQuestions() {
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  return [
-    "Can simultaneous pruning and quantization achieve better efficiency than either technique alone?",
-    "How do transformer efficiency techniques perform across multilingual settings?",
-    "What is the optimal compression ratio for edge device deployment without accuracy loss?",
-    "Can a unified benchmark framework fairly compare all major transformer efficiency methods?",
-    "How does model performance degrade over extended deployment periods?"
-  ];
+function parseQuestions(output) {
+  const questions = [];
+  let inSection = false;
+
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+
+    if (trimmed.toUpperCase().includes("CANDIDATE RESEARCH QUESTIONS")) {
+      inSection = true;
+      continue;
+    }
+
+    if (inSection && trimmed && /^\d+\./.test(trimmed)) {
+      let q = trimmed.replace(/^\d+\.\s*/, "");
+      if (q.includes("| Gap addressed:")) {
+        q = q.split("| Gap addressed:")[0].trim();
+      }
+      if (q.includes("| Feasibility:")) {
+        q = q.split("| Feasibility:")[0].trim();
+      }
+      if (q.length > 30) {
+        questions.push(q);
+      }
+    }
+  }
+  return questions;
 }
 
-export default function ResearchQuestionPage({ autonomous, litOutput, onComplete }) {
+export default function ResearchQuestionPage({ autonomous, topic, litOutput, onComplete }) {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState([]);
   const [selected, setSelected] = useState("");
@@ -20,17 +37,44 @@ export default function ResearchQuestionPage({ autonomous, litOutput, onComplete
   const [useCustom, setUseCustom] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (litOutput) {
-      setLoading(true);
-      mockGenerateQuestions().then((qs) => {
-        setQuestions(qs);
-        setLoading(false);
-        setReady(true);
-      });
+    if (litOutput && topic) {
+      generateQuestions();
     }
-  }, [litOutput]);
+  }, [litOutput, topic]);
+
+  async function generateQuestions() {
+    setLoading(true);
+    setError("");
+    setReady(false);
+    setQuestions([]);
+
+    try {
+      const response = await fetch("http://localhost:8000/api/stages/research_questions/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic,
+          literature: litOutput
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const parsed = parseQuestions(data.output || "");
+      setQuestions(parsed);
+      setReady(true);
+    } catch (err) {
+      setError(`Something went wrong: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function handleConfirm() {
     const finalQuestion = useCustom ? custom.trim() : selected;
@@ -48,11 +92,20 @@ export default function ResearchQuestionPage({ autonomous, litOutput, onComplete
 
       {!litOutput && (
         <div className="warning-box">
-          No literature output found. Please run the Literature stage first.
+          No literature output found. Please run the Topic & Literature stage first.
         </div>
       )}
 
-      {loading && <p className="auto-note">Generating research questions...</p>}
+      {loading && (
+        <div className="status-indicator">
+          <div className="spinner"></div>
+          <p>Generating research questions...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="warning-box">{error}</div>
+      )}
 
       {ready && !useCustom && (
         <div className="question-list">
