@@ -5,6 +5,7 @@ from paper_agent import run_agent as run_paper_agent
 from lit_agent_p1 import run_literature_stage
 from lit_agent_p2 import run_deep_literature_stage
 from pi_agent import run_pi_agent
+from proposal_agent import run_proposal_stage
 from review_agent import run_review_from_file
 
 def parse_research_questions(lit_output: str) -> list[str]:
@@ -106,10 +107,11 @@ def main():
         print(f"Deep literature failed; using placeholder. Reason: {exc}")
         deep_lit_path = write_text(stage_dir / "deep_literature_output.md", "Deep literature placeholder.")
 
-    proposal_path = write_text(
-        stage_dir / "proposal_output.md",
-        "Proposal placeholder: hypothesis, variables, experiment design, and success criteria are pending.",
-    )
+    print("\n--- Proposal Agent ---")
+    proposal_output = run_proposal_stage(selected_question, deep_lit_path)
+    proposal_path = write_text(stage_dir / "proposal_output.md", proposal_output)
+    print(proposal_output)
+    
     experiment_path = write_text(
         stage_dir / "experiment_output.md",
         "Experiment placeholder: experiment execution and results are pending. Do not report completed findings.",
