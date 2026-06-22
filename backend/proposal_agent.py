@@ -28,6 +28,7 @@ Critical rules:
 - If a required dataset is not confirmed in the provided deep literature review, label it as TO_VERIFY and explain how the Experiment stage should verify it.
 - If a GitHub result is used, label it GITHUB_CANDIDATE and explain that the Experiment stage must verify license, data files, documentation quality, and reproducibility before execution.
 - The proposal must be implementable by a later Experiment Agent using code and downloaded/public data.
+- The proposal must include a machine-readable EXPERIMENT EXECUTION SPEC so the Experiment Agent knows exactly what to download/load, what target column to use, what task type to run, and what metric determines success.
 - Prefer experiments that can be run with reasonable compute and reproducible data.
 - Do not execute the experiment.
 - Do not write code.
@@ -70,6 +71,26 @@ FEASIBILITY CHECK:
 LIMITATIONS AND RISKS:
 - [limitation/risk 1]
 - [limitation/risk 2]
+
+EXPERIMENT EXECUTION SPEC:
+{
+  "task_type": "classification or regression",
+  "dataset_url": "direct public CSV URL, raw GitHub CSV URL, or TO_VERIFY",
+  "dataset_name": "dataset name",
+  "target_column": "exact target column name or TO_VERIFY",
+  "feature_columns": ["column name or AUTO_NUMERIC"],
+  "baseline": "majority_class for classification or mean_prediction for regression",
+  "success_metric": "accuracy, mae, rmse, or r2",
+  "success_threshold": 0.0,
+  "threshold_direction": "greater_or_equal or less_or_equal",
+  "notes_for_experiment_agent": "specific instructions for loading and evaluating the dataset"
+}
+
+Rules for EXPERIMENT EXECUTION SPEC:
+- The JSON must be valid JSON.
+- Use TO_VERIFY for any field that is not confirmed.
+- dataset_url must be a direct downloadable CSV URL or a local/public path the Experiment Agent can read. A GitHub repository home page is not enough.
+- If no executable dataset is verified, set dataset_url, target_column, and task_type to TO_VERIFY.
 """
 
 
@@ -329,6 +350,20 @@ Fallback proposal only. Live proposal generation failed: {reason}
 LIMITATIONS AND RISKS:
 - The experiment design is not complete.
 - Dataset availability has not been verified.
+
+EXPERIMENT EXECUTION SPEC:
+{
+  "task_type": "TO_VERIFY",
+  "dataset_url": "TO_VERIFY",
+  "dataset_name": "TO_VERIFY",
+  "target_column": "TO_VERIFY",
+  "feature_columns": ["TO_VERIFY"],
+  "baseline": "TO_VERIFY",
+  "success_metric": "TO_VERIFY",
+  "success_threshold": 0.0,
+  "threshold_direction": "TO_VERIFY",
+  "notes_for_experiment_agent": "Live proposal generation failed, so the Experiment Agent must request proposal redesign before execution."
+}
 """
 
 
