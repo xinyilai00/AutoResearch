@@ -2,6 +2,7 @@ from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_
 
 import requests
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -50,6 +51,33 @@ WHAT THIS QUESTION STILL NEEDS:
 # ACADEMIC DATABASE SEARCH FUNCTIONS
 # ─────────────────────────────────────────────
 
+def clean_arxiv_query(query: str, max_words: int = 8) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", query)
+    stopwords = {
+        "the",
+        "and",
+        "for",
+        "from",
+        "with",
+        "that",
+        "this",
+        "what",
+        "when",
+        "where",
+        "which",
+        "into",
+        "can",
+        "are",
+        "how",
+    }
+    words = [
+        word
+        for word in cleaned.split()
+        if len(word) > 2 and word.lower() not in stopwords
+    ]
+    return " ".join(words[:max_words])
+
+
 def search_semantic_scholar(query: str, limit: int = 15) -> list[dict]:
     try:
         response = requests.get(
@@ -81,10 +109,14 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[dict]:
 
 def search_arxiv(query: str, limit: int = 15) -> list[dict]:
     try:
+        arxiv_query = clean_arxiv_query(query)
+        if not arxiv_query:
+            return []
+
         response = requests.get(
             "https://export.arxiv.org/api/query",
             params={
-                "search_query": f"all:{query}",
+                "search_query": f"all:{arxiv_query}",
                 "max_results": limit,
                 "sortBy": "relevance"
             },
