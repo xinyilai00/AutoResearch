@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -79,12 +80,76 @@ def read_text_or_path(value: str | Path) -> str:
     return str(value)
 
 
+def github_search_queries(query: str) -> list[str]:
+    cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", query)
+    words = [
+        word
+        for word in cleaned.split()
+        if len(word) > 2
+        and word.lower()
+        not in {
+            "the",
+            "and",
+            "for",
+            "from",
+            "with",
+            "that",
+            "this",
+            "what",
+            "extent",
+            "across",
+            "can",
+            "are",
+            "well",
+        }
+    ]
+    compact = " ".join(words[:10])
+    focused = " ".join(
+        word
+        for word in words
+        if word.lower()
+        in {
+            "scientific",
+            "claims",
+            "calibration",
+            "confidence",
+            "probability",
+            "llm",
+            "large",
+            "language",
+            "models",
+            "hallucination",
+            "fact",
+            "verification",
+        }
+    )
+    queries = [focused, compact, "scientific claims calibration dataset", "llm hallucination dataset"]
+    return [item for item in dict.fromkeys(q.strip() for q in queries) if item]
+
+
 def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
+    collected = []
+    seen_urls = set()
+
+    for github_query in github_search_queries(query):
+        results = search_github_repositories(github_query, limit=limit)
+        for result in results:
+            url = result.get("url")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                collected.append(result)
+            if len(collected) >= limit:
+                return collected
+
+    return collected
+
+
+def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
     try:
         response = requests.get(
             "https://api.github.com/search/repositories",
             params={
-                "q": f"{query} dataset data",
+                "q": f"{query} dataset data in:description,readme",
                 "sort": "stars",
                 "order": "desc",
                 "per_page": limit,
@@ -97,7 +162,7 @@ def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
         )
         response.raise_for_status()
     except requests.exceptions.RequestException as exc:
-        print(f"GitHub dataset search failed: {exc}")
+        print(f"GitHub dataset search failed for query '{query}': {exc}")
         return []
 
     results = []

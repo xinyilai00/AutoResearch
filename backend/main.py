@@ -128,6 +128,8 @@ def main():
             str(lit_path),
             "--research-question",
             str(selected_question_path),
+            "--deep-literature",
+            str(deep_lit_path),
             "--proposal",
             str(proposal_path),
             "--experiment",
