@@ -38,12 +38,13 @@ def get_response(request_id):
         params={"requestId": request_id},
         stream=True
     )
+    response.encoding = "utf-8"
 
     full_response = ""
 
     for line in response.iter_lines():
         if line:
-            decoded = line.decode("utf-8")
+            decoded = line.decode("utf-8", errors="replace")
             if decoded.startswith("data:"):
                 try:
                     data = json.loads(decoded[5:])
