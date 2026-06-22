@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lit_agent_p1 import run_literature_stage
-from lit_agent_p2 import run_deep_literature_stage
-from paper_agent import parse_args as parse_paper_args
-from paper_agent import run_agent as run_paper_agent
-from pi_agent import run_pi_agent
-from pipeline_state import PipelineState, compose_feedback_prompt
-from proposal_agent import run_proposal_stage
-from research_question_agent import run_research_question_stage
-from review_agent import run_review_from_file
+from backend.lit_agent_p1 import run_literature_stage
+from backend.lit_agent_p2 import run_deep_literature_stage
+from backend.paper_agent import parse_args as parse_paper_args
+from backend.paper_agent import run_agent as run_paper_agent
+from backend.pi_agent import run_pi_agent
+from backend.pipeline_state import PipelineState, compose_feedback_prompt
+from backend.proposal_agent import run_proposal_stage
+from backend.research_question_agent import run_research_question_stage
+from backend.review_agent import run_review_from_file
 
 
 def apply_stage_feedback(
