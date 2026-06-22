@@ -5,6 +5,8 @@ from paper_agent import run_agent as run_paper_agent
 from lit_agent_p1 import run_literature_stage
 from lit_agent_p2 import run_deep_literature_stage
 from pi_agent import run_pi_agent
+from pipeline_state import PipelineState
+from proposal_agent import run_proposal_stage
 from review_agent import run_review_from_file
 
 def parse_research_questions(lit_output: str) -> list[str]:
@@ -62,6 +64,8 @@ def main():
     output_dir = Path("paper_runs/latest")
     stage_dir = output_dir / "stage_outputs"
     stage_dir.mkdir(parents=True, exist_ok=True)
+    state = PipelineState(output_dir)
+    state.set_metadata("topic", topic)
 
     # PART 1
     print("\n--- PI Agent ---")
@@ -70,7 +74,7 @@ def main():
     except Exception as exc:
         print(f"PI failed; using placeholder. Reason: {exc}")
         pi_output = "PI placeholder: use the raw topic as the provisional search query."
-    pi_path = write_text(stage_dir / "pi_output.md", pi_output)
+    pi_path = state.write_stage_output("pi", pi_output)
 
     print("\n--- Literature Agent (Part 1) ---")
     try:
@@ -81,7 +85,7 @@ def main():
             "Literature placeholder: literature review, verified citations, "
             "research gaps, and candidate research questions are pending."
         )
-    lit_path = write_text(stage_dir / "literature_output.md", lit_output)
+    lit_path = state.write_stage_output("literature", lit_output)
     print(lit_output)
 
     questions = parse_research_questions(lit_output)
@@ -94,25 +98,27 @@ def main():
     if "| Gap addressed:" in selected_question:
         selected_question = selected_question.split("| Gap addressed:")[0].strip()
     print(f"\nSelected research question:\n{selected_question}")
-    selected_question_path = write_text(stage_dir / "selected_question.md", selected_question)
+    selected_question_path = state.write_stage_output("research_question", selected_question)
 
     # PART 2
     print("\n--- Deep Literature Agent (Part 2) ---")
     try:
         deep_lit_output = run_deep_literature_stage(selected_question)
         print(deep_lit_output)
-        deep_lit_path = write_text(stage_dir / "deep_literature_output.md", deep_lit_output)
+        deep_lit_path = state.write_stage_output("deep_literature", deep_lit_output)
     except Exception as exc:
         print(f"Deep literature failed; using placeholder. Reason: {exc}")
-        deep_lit_path = write_text(stage_dir / "deep_literature_output.md", "Deep literature placeholder.")
+        deep_lit_path = state.write_stage_output("deep_literature", "Deep literature placeholder.", status="placeholder")
 
-    proposal_path = write_text(
-        stage_dir / "proposal_output.md",
-        "Proposal placeholder: hypothesis, variables, experiment design, and success criteria are pending.",
-    )
-    experiment_path = write_text(
-        stage_dir / "experiment_output.md",
+    print("\n--- Proposal Agent ---")
+    proposal_output = run_proposal_stage(selected_question, deep_lit_path)
+    proposal_path = state.write_stage_output("proposal", proposal_output)
+    print(proposal_output)
+    
+    experiment_path = state.write_stage_output(
+        "experiment",
         "Experiment placeholder: experiment execution and results are pending. Do not report completed findings.",
+        status="placeholder",
     )
 
     print("\n--- Paper Agent ---")
@@ -126,6 +132,8 @@ def main():
             str(lit_path),
             "--research-question",
             str(selected_question_path),
+            "--deep-literature",
+            str(deep_lit_path),
             "--proposal",
             str(proposal_path),
             "--experiment",
