@@ -23,10 +23,10 @@ Present an experiment based on existing literature and provide a hypothesis for 
 Critical rules:
 - The experiment CANNOT be fake.
 - The experiment must be possible to implement using only public data, prior-work datasets, or data obtainable from public databases/repositories such as arXiv, Semantic Scholar, OpenAlex, Kaggle, Hugging Face Datasets, UCI, Papers With Code, PubMed, Crossref, GitHub, or other legitimate public sources.
-- Do not claim that a dataset exists unless it is named in the deep literature review, listed in the GitHub public dataset search results, or clearly marked as TO_VERIFY.
+- Do not claim that a dataset exists unless it is named in the deep literature review, listed in the public dataset search results, or clearly marked as TO_VERIFY.
 - Do not fabricate citations, dataset sizes, URLs, metrics, baselines, or prior results.
 - If a required dataset is not confirmed in the provided deep literature review, label it as TO_VERIFY and explain how the Experiment stage should verify it.
-- If a GitHub result is used, label it GITHUB_CANDIDATE and explain that the Experiment stage must verify license, data files, documentation quality, and reproducibility before execution.
+- If a GitHub, Hugging Face, or UCI result is used, label it with its source status and explain that the Experiment stage must verify license, data files, documentation quality, schema, and reproducibility before execution.
 - The proposal must be implementable by a later Experiment Agent using code and downloaded/public data.
 - The proposal must include a machine-readable EXPERIMENT EXECUTION SPEC so the Experiment Agent knows exactly what to download/load, what target column to use, what task type to run, and what metric determines success.
 - Prefer experiments that can be run with reasonable compute and reproducible data.
@@ -90,6 +90,7 @@ Rules for EXPERIMENT EXECUTION SPEC:
 - The JSON must be valid JSON.
 - Use TO_VERIFY for any field that is not confirmed.
 - dataset_url must be a direct downloadable CSV URL or a local/public path the Experiment Agent can read. A GitHub repository home page is not enough.
+- Prefer direct CSV URLs listed in the public dataset search results. If a source is only a candidate page without a direct CSV URL, keep dataset_url as TO_VERIFY.
 - If no executable dataset is verified, set dataset_url, target_column, and task_type to TO_VERIFY.
 """
 
@@ -148,6 +149,14 @@ def github_search_queries(query: str) -> list[str]:
     return [item for item in dict.fromkeys(q.strip() for q in queries) if item]
 
 
+def search_public_datasets(query: str, limit: int = 5) -> list[dict]:
+    sources = []
+    sources.extend(search_github_public_datasets(query, limit=limit))
+    sources.extend(search_huggingface_datasets(query, limit=limit))
+    sources.extend(search_uci_datasets(query, limit=limit))
+    return sources
+
+
 def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
     collected = []
     seen_urls = set()
@@ -155,6 +164,7 @@ def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
     for github_query in github_search_queries(query):
         results = search_github_repositories(github_query, limit=limit)
         for result in results:
+            result["csv_files"] = find_github_csv_files(result, limit=3)
             url = result.get("url")
             if url and url not in seen_urls:
                 seen_urls.add(url)
@@ -193,6 +203,7 @@ def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
                 "source": "GitHub",
                 "name": item.get("full_name", ""),
                 "url": item.get("html_url", ""),
+                "default_branch": item.get("default_branch") or "main",
                 "description": item.get("description") or "",
                 "stars": item.get("stargazers_count"),
                 "language": item.get("language") or "N/A",
@@ -202,23 +213,168 @@ def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
     return results
 
 
-def format_github_sources_for_prompt(sources: list[dict]) -> str:
+def find_github_csv_files(repo: dict, limit: int = 3) -> list[dict]:
+    repo_name = repo.get("name")
+    branch = repo.get("default_branch") or "main"
+    if not repo_name or "/" not in repo_name:
+        return []
+
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{repo_name}/git/trees/{branch}",
+            params={"recursive": "1"},
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "AutoResearch-Proposal-Agent",
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+    except requests.exceptions.RequestException:
+        return []
+
+    csv_files = []
+    for item in response.json().get("tree", []):
+        path = item.get("path", "")
+        if item.get("type") == "blob" and path.lower().endswith(".csv"):
+            csv_files.append(
+                {
+                    "path": path,
+                    "raw_url": f"https://raw.githubusercontent.com/{repo_name}/{branch}/{path}",
+                }
+            )
+            if len(csv_files) >= limit:
+                break
+    return csv_files
+
+
+def search_huggingface_datasets(query: str, limit: int = 5) -> list[dict]:
+    collected = []
+    for hf_query in github_search_queries(query):
+        try:
+            response = requests.get(
+                "https://huggingface.co/api/datasets",
+                params={"search": hf_query, "limit": limit},
+                headers={"User-Agent": "AutoResearch-Proposal-Agent"},
+                timeout=20,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            print(f"Hugging Face dataset search failed for query '{hf_query}': {exc}")
+            continue
+
+        for item in response.json():
+            dataset_id = item.get("id")
+            if not dataset_id:
+                continue
+            source = {
+                "source": "Hugging Face",
+                "name": dataset_id,
+                "url": f"https://huggingface.co/datasets/{dataset_id}",
+                "description": item.get("description") or "",
+                "downloads": item.get("downloads"),
+                "likes": item.get("likes"),
+                "csv_files": find_huggingface_csv_files(dataset_id, limit=3),
+            }
+            if source["url"] not in {entry.get("url") for entry in collected}:
+                collected.append(source)
+            if len(collected) >= limit:
+                return collected
+    return collected
+
+
+def find_huggingface_csv_files(dataset_id: str, limit: int = 3) -> list[dict]:
+    try:
+        response = requests.get(
+            f"https://huggingface.co/api/datasets/{dataset_id}/tree/main",
+            params={"recursive": "1"},
+            headers={"User-Agent": "AutoResearch-Proposal-Agent"},
+            timeout=20,
+        )
+        response.raise_for_status()
+    except requests.exceptions.RequestException:
+        return []
+
+    csv_files = []
+    for item in response.json():
+        path = item.get("path", "")
+        item_type = item.get("type", "")
+        if item_type == "file" and path.lower().endswith(".csv"):
+            csv_files.append(
+                {
+                    "path": path,
+                    "raw_url": f"https://huggingface.co/datasets/{dataset_id}/resolve/main/{path}",
+                }
+            )
+            if len(csv_files) >= limit:
+                break
+    return csv_files
+
+
+def search_uci_datasets(query: str, limit: int = 5) -> list[dict]:
+    collected = []
+    for uci_query in github_search_queries(query):
+        try:
+            response = requests.get(
+                "https://archive.ics.uci.edu/api/datasets",
+                params={"search": uci_query},
+                headers={"User-Agent": "AutoResearch-Proposal-Agent"},
+                timeout=20,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            print(f"UCI dataset search failed for query '{uci_query}': {exc}")
+            continue
+
+        payload = response.json()
+        results = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(results, list):
+            continue
+
+        for item in results:
+            dataset_id = item.get("id") or item.get("ID") or item.get("uci_id")
+            name = item.get("name") or item.get("Name") or item.get("title") or "UCI dataset"
+            source = {
+                "source": "UCI",
+                "name": name,
+                "url": f"https://archive.ics.uci.edu/dataset/{dataset_id}" if dataset_id else "https://archive.ics.uci.edu/",
+                "description": item.get("abstract") or item.get("description") or "",
+                "csv_files": [],
+            }
+            if source["url"] not in {entry.get("url") for entry in collected}:
+                collected.append(source)
+            if len(collected) >= limit:
+                return collected
+    return collected
+
+
+def format_public_sources_for_prompt(sources: list[dict]) -> str:
     if not sources:
         return (
-            "No GitHub public dataset repositories were found automatically. "
-            "Any GitHub dataset required by the proposal must be marked TO_VERIFY."
+            "No public dataset candidates were found automatically from GitHub, Hugging Face, or UCI. "
+            "Any dataset required by the proposal must be marked TO_VERIFY."
         )
 
     lines = []
     for index, source in enumerate(sources, 1):
+        csv_files = source.get("csv_files") or []
+        status = f"{source.get('source', 'Public source').upper().replace(' ', '_')}_CANDIDATE"
+        if csv_files:
+            status = "DIRECT_CSV_CANDIDATE"
+        csv_lines = "\n".join(
+            f"  - {item.get('raw_url')} (path: {item.get('path')})"
+            for item in csv_files
+        ) or "  - None found automatically; dataset_url must remain TO_VERIFY unless manually verified."
         lines.append(
-            f"[{index}] GitHub repository: {source.get('name')}\n"
+            f"[{index}] {source.get('source')} dataset candidate: {source.get('name')}\n"
             f"URL: {source.get('url')}\n"
             f"Description: {source.get('description') or 'N/A'}\n"
             f"Stars: {source.get('stars')}\n"
+            f"Downloads: {source.get('downloads')}\n"
             f"Language: {source.get('language')}\n"
             f"Updated: {source.get('updated_at')}\n"
-            "Status: GITHUB_CANDIDATE; verify license, files, documentation, and reproducibility before use.\n"
+            f"Direct CSV files discovered:\n{csv_lines}\n"
+            f"Status: {status}; verify license, schema, documentation, and reproducibility before use.\n"
         )
     return "\n".join(lines)
 
@@ -266,7 +422,7 @@ def read_agent_stream(request_id: str) -> str:
 def run_proposal_agent(
     research_question: str,
     deep_literature_review: str,
-    github_public_sources: str = "",
+    public_data_sources: str = "",
 ) -> str:
     headers = {
         "Content-Type": "application/json",
@@ -281,8 +437,8 @@ def run_proposal_agent(
             + research_question
             + "\n\nDeep literature review:\n"
             + deep_literature_review
-            + "\n\nGitHub public dataset search results:\n"
-            + github_public_sources
+            + "\n\nPublic dataset search results from GitHub, Hugging Face, and UCI:\n"
+            + public_data_sources
         ),
     }
     if SEND_MODEL_TO_AGENT_API and MODEL:
@@ -370,11 +526,11 @@ EXPERIMENT EXECUTION SPEC:
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Designing experiment proposal...")
     deep_literature_text = read_text_or_path(deep_literature_review)
-    print("[Proposal Agent] Searching GitHub for public dataset candidates...")
-    github_sources = search_github_public_datasets(research_question)
-    github_sources_text = format_github_sources_for_prompt(github_sources)
+    print("[Proposal Agent] Searching public dataset candidates...")
+    public_sources = search_public_datasets(research_question)
+    public_sources_text = format_public_sources_for_prompt(public_sources)
     try:
-        return run_proposal_agent(research_question, deep_literature_text, github_sources_text)
+        return run_proposal_agent(research_question, deep_literature_text, public_sources_text)
     except Exception as exc:
         print(f"Proposal failed; using placeholder. Reason: {exc}")
         return fallback_proposal(research_question, str(exc))
