@@ -59,7 +59,9 @@ def response_for_path(stage: str, path: Path, state: PipelineState, status: str)
 
 @router.post("/api/stages/{stage}/run")
 def run_stage(stage: str, request: StageRunRequest) -> dict:
+    print(f"DEBUG: received stage = {stage}")
     stage = normalize_stage_name(stage)
+    print(f"DEBUG: normalized stage = {stage}")
     state = PipelineState(request.run_dir)
     if request.topic:
         state.set_metadata("topic", request.topic)
@@ -72,6 +74,8 @@ def run_stage(stage: str, request: StageRunRequest) -> dict:
         output_path = run_stage_without_feedback(stage, request, state)
         return response_for_path(stage, output_path, state, "generated")
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
