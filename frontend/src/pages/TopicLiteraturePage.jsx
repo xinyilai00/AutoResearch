@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-export default function TopicLiteraturePage({ autonomous, onComplete }) {
+export default function TopicLiteraturePage({ autonomous, onComplete, onTopicSet }) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState("");
   const [output, setOutput] = useState("");
@@ -87,7 +87,10 @@ export default function TopicLiteraturePage({ autonomous, onComplete }) {
           type="text"
           placeholder="e.g. transformer efficiency in NLP"
           value={topic}
-          onChange={(e) => setTopic(e.target.value)}
+            onChange={(e) => {
+              setTopic(e.target.value);
+              onTopicSet(e.target.value);
+            }}
           disabled={running}
         />
         <button
