@@ -1,9 +1,11 @@
 {
   "active_outputs": {
-    "pi": "paper_runs/latest/stage_outputs/pi_output_v02.md"
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v03.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v01.md"
   },
   "stage_status": {
-    "pi": "generated"
+    "pi": "generated",
+    "literature": "generated"
   },
   "versions": {
     "pi": [
@@ -15,6 +17,18 @@
       {
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/pi_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v03.md",
+        "status": "generated"
+      }
+    ],
+    "literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v01.md",
         "status": "generated"
       }
     ]

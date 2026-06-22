@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage.jsx";
-import PiPage from "./pages/PiPage.jsx";
-import LiteraturePage from "./pages/LiteraturePage.jsx";
+import TopicLiteraturePage from "./pages/TopicLiteraturePage.jsx";
 import ResearchQuestionPage from "./pages/ResearchQuestionPage.jsx";
 import DeepLiteraturePage from "./pages/DeepLiteraturePage.jsx";
 import ProposalPage from "./pages/ProposalPage.jsx";
@@ -18,8 +17,7 @@ import "./styles/app.css";
 
 const stages = [
   { label: "Dashboard", path: "/" },
-  { label: "PI", path: "/pi" },
-  { label: "Literature", path: "/literature" },
+  { label: "Topic & Literature", path: "/topic" },
   { label: "Research Question", path: "/research-question" },
   { label: "Deep Literature", path: "/deep-literature" },
   { label: "Proposal", path: "/proposal" },
@@ -67,8 +65,6 @@ function Layout({ children }) {
 function App() {
   const [autonomous, setAutonomous] = useState(false);
 
-  // Stage outputs — equivalent of main.py passing data between agents
-  const [piOutput, setPiOutput] = useState("");
   const [litOutput, setLitOutput] = useState("");
   const [selectedQuestion, setSelectedQuestion] = useState("");
   const [deepLitOutput, setDeepLitOutput] = useState("");
@@ -82,8 +78,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
-          <Route path="/pi" element={<PiPage autonomous={autonomous} onComplete={setPiOutput} />} />
-          <Route path="/literature" element={<LiteraturePage autonomous={autonomous} piOutput={piOutput} onComplete={setLitOutput} />} />
+          <Route path="/topic" element={<TopicLiteraturePage autonomous={autonomous} onComplete={setLitOutput} />} />
           <Route path="/research-question" element={<ResearchQuestionPage autonomous={autonomous} litOutput={litOutput} onComplete={setSelectedQuestion} />} />
           <Route path="/deep-literature" element={<DeepLiteraturePage autonomous={autonomous} selectedQuestion={selectedQuestion} onComplete={setDeepLitOutput} />} />
           <Route path="/proposal" element={<ProposalPage autonomous={autonomous} deepLitOutput={deepLitOutput} onComplete={setProposalOutput} />} />
