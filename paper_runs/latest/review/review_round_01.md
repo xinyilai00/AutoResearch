@@ -1,26 +1,18 @@
 # Review
 
 ## Scores
-- Novelty: 2/5
-- Correctness: 2/5
-- Evidence: 1/5
+- Novelty: 3/5
+- Correctness: 3/5
+- Evidence: 2/5
 - Clarity: 4/5
-- Reproducibility: 2/5
-- Total: 11/25
+- Reproducibility: 4/5
+- Total: 16/25
 
 ## Strengths
-- The five-stage experimental design with a 4x3 factorial error injection taxonomy (four error types crossed with three severity levels) across three epistemically distinct domains is well-structured and provides a clear, stratified evaluation protocol with pre-registered success criteria and statistical analysis plans.
+- The experimental design is methodologically rigorous: within-subjects comparison with counterbalanced ordering, stratification by domain and difficulty tier, pre-registered statistical tests (McNemar's test, paired bootstrap resampling), and explicit bias controls demonstrate strong methodological thinking for a proposal paper.
 
 ## Weaknesses
-- No experimental results exist: all three result tables contain only '[pending]' placeholders, all six hypotheses are explicitly labeled provisional and untested, and the paper is effectively a research proposal rather than a completed study, yet it makes the unsubstantiated claim of being 'the first systematic attempt' at this evaluation.
-- The vast majority of references (at least 16 of 18) are marked '[TODO: verify]' and have not been bibliographically confirmed, meaning literature-based claims throughout the Review section rest on unverified citations, including the Hemachandra et al. (2023) 'MFOUR Vibe Framework' reference whose venue, authors, and even existence are unconfirmed.
-- Critical implementation details are missing: all three domain-specific datasets are unspecified (marked '[TODO]'), the code repository is absent ('[TODO: repository link pending]'), and the LLM prompting protocols for error injection are not provided, making the framework not yet directly executable despite the claim that it is.
-- The paper conflates epistemic uncertainty estimation for Bayesian neural networks (where it is well-defined as posterior parameter variance) with verbalized confidence and logit-based probabilities for LLMs (where the mapping to epistemic uncertainty is theoretically tenuous), without providing a formal justification for treating these as comparable measures in the stratified analysis.
-- The synthetic error injection approach introduces a fundamental ecological validity threat that is acknowledged but not addressed: prompt-level injection (e.g., instructing the model to 'ignore confounder X') produces errors through a mechanism that may be trivially detectable via uncertainty estimates because the model is being asked to do something it was not trained to do, potentially inflating AUROC estimates relative to naturally occurring errors.
+- The reference list contains approximately 20 entries marked [TODO] with unverified bibliographic details, and at least one citation (Zhao et al., 2026) appears to carry a future or fabricated date; several tangential references (e.g., DeepSeek-AI 2025 on protocol fuzzing, Meng et al. 2024 on code vulnerability detection) are cited in passing but do not substantively support any core claim, raising concerns about citation padding and unreliable sourcing.
 
 ## Revision Plan
-- Execute the full experimental protocol across at least one domain to produce actual results, populate Tables 1-3 with empirical data, and test all six hypotheses with the pre-registered statistical analyses before presenting the work as anything beyond a protocol paper.
-- Verify all 18 references bibliographically, remove or replace any that cannot be confirmed (particularly the Hemachandra et al. MFOUR Vibe Framework and Lekadir et al. 2025), and ensure that all literature-based claims in the Review section are supported by confirmed sources.
-- Specify exact datasets for all three domains (replacing all '[TODO]' placeholders), provide the complete prompt templates for both prompt-level and data-level error injection, and deposit all code and materials in a public repository.
-- Add a formal theoretical section justifying why verbalized confidence, logit-based probabilities, and self-reflection confidence can be treated as epistemic uncertainty proxies comparable to BNN posterior variance and ensemble disagreement, or restructure the analysis to treat these as distinct construct categories with separate evaluation criteria.
-- Include a pilot validation study (even with N=50 per condition in a single domain) to demonstrate that the synthetic error injection protocol produces errors that are (a) correctly classified by expert raters at acceptable inter-rater reliability and (b) not trivially detectable through surface-level artifacts of the injection mechanism itself.
+- Independently verify every reference using Google Scholar, Semantic Scholar, or publisher databases; remove or replace all entries that cannot be confirmed as real publications with correct bibliographic details, delete tangential citations that do not directly support a specific claim in the text, and add a formal power analysis justifying the approximately 500-claim sample size given the planned stratification across five domains, three difficulty tiers, and multiple models.

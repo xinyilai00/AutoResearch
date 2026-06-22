@@ -1,0 +1,350 @@
+from __future__ import annotations
+
+import json
+import re
+import time
+from pathlib import Path
+
+import requests
+
+from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+
+
+PROPOSAL_SYSTEM_PROMPT = """
+You are the Proposal Agent in an autonomous research pipeline.
+
+Input:
+- A selected research question
+- A deep literature review from previous stages
+
+Job:
+Present an experiment based on existing literature and provide a hypothesis for the research question.
+
+Critical rules:
+- The experiment CANNOT be fake.
+- The experiment must be possible to implement using only public data, prior-work datasets, or data obtainable from public databases/repositories such as arXiv, Semantic Scholar, OpenAlex, Kaggle, Hugging Face Datasets, UCI, Papers With Code, PubMed, Crossref, GitHub, or other legitimate public sources.
+- Do not claim that a dataset exists unless it is named in the deep literature review, listed in the GitHub public dataset search results, or clearly marked as TO_VERIFY.
+- Do not fabricate citations, dataset sizes, URLs, metrics, baselines, or prior results.
+- If a required dataset is not confirmed in the provided deep literature review, label it as TO_VERIFY and explain how the Experiment stage should verify it.
+- If a GitHub result is used, label it GITHUB_CANDIDATE and explain that the Experiment stage must verify license, data files, documentation quality, and reproducibility before execution.
+- The proposal must be implementable by a later Experiment Agent using code and downloaded/public data.
+- Prefer experiments that can be run with reasonable compute and reproducible data.
+- Do not execute the experiment.
+- Do not write code.
+- Return plain text only.
+
+Output in this exact format:
+
+RESEARCH QUESTION:
+[selected research question]
+
+HYPOTHESIS:
+[one testable hypothesis]
+
+EXPERIMENT DESIGN:
+[specific experiment design based on the literature]
+
+PUBLIC DATA SOURCES:
+- [dataset/source 1]: [what it contains, why it is relevant, whether it is CONFIRMED_FROM_LITERATURE or TO_VERIFY]
+- [dataset/source 2]: [same]
+
+DATA COLLECTION PLAN:
+[how the Experiment Agent should retrieve or construct the dataset from public sources]
+
+METHODOLOGY:
+[models, baselines, analysis methods, validation scheme, and statistical tests]
+
+KEY VARIABLES:
+- Independent variables: [...]
+- Dependent variables: [...]
+- Control variables: [...]
+
+SUCCESS CRITERIA:
+- [criterion 1]
+- [criterion 2]
+- [criterion 3]
+
+FEASIBILITY CHECK:
+[why this can be implemented with public/prior-work data only, or what must be verified before running]
+
+LIMITATIONS AND RISKS:
+- [limitation/risk 1]
+- [limitation/risk 2]
+"""
+
+
+def read_text_or_path(value: str | Path) -> str:
+    path = Path(value)
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return str(value)
+
+
+def github_search_queries(query: str) -> list[str]:
+    cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", query)
+    words = [
+        word
+        for word in cleaned.split()
+        if len(word) > 2
+        and word.lower()
+        not in {
+            "the",
+            "and",
+            "for",
+            "from",
+            "with",
+            "that",
+            "this",
+            "what",
+            "extent",
+            "across",
+            "can",
+            "are",
+            "well",
+        }
+    ]
+    compact = " ".join(words[:10])
+    focused = " ".join(
+        word
+        for word in words
+        if word.lower()
+        in {
+            "scientific",
+            "claims",
+            "calibration",
+            "confidence",
+            "probability",
+            "llm",
+            "large",
+            "language",
+            "models",
+            "hallucination",
+            "fact",
+            "verification",
+        }
+    )
+    queries = [focused, compact, "scientific claims calibration dataset", "llm hallucination dataset"]
+    return [item for item in dict.fromkeys(q.strip() for q in queries) if item]
+
+
+def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
+    collected = []
+    seen_urls = set()
+
+    for github_query in github_search_queries(query):
+        results = search_github_repositories(github_query, limit=limit)
+        for result in results:
+            url = result.get("url")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                collected.append(result)
+            if len(collected) >= limit:
+                return collected
+
+    return collected
+
+
+def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
+    try:
+        response = requests.get(
+            "https://api.github.com/search/repositories",
+            params={
+                "q": f"{query} dataset data in:description,readme",
+                "sort": "stars",
+                "order": "desc",
+                "per_page": limit,
+            },
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "AutoResearch-Proposal-Agent",
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+    except requests.exceptions.RequestException as exc:
+        print(f"GitHub dataset search failed for query '{query}': {exc}")
+        return []
+
+    results = []
+    for item in response.json().get("items", []):
+        results.append(
+            {
+                "source": "GitHub",
+                "name": item.get("full_name", ""),
+                "url": item.get("html_url", ""),
+                "description": item.get("description") or "",
+                "stars": item.get("stargazers_count"),
+                "language": item.get("language") or "N/A",
+                "updated_at": item.get("updated_at", ""),
+            }
+        )
+    return results
+
+
+def format_github_sources_for_prompt(sources: list[dict]) -> str:
+    if not sources:
+        return (
+            "No GitHub public dataset repositories were found automatically. "
+            "Any GitHub dataset required by the proposal must be marked TO_VERIFY."
+        )
+
+    lines = []
+    for index, source in enumerate(sources, 1):
+        lines.append(
+            f"[{index}] GitHub repository: {source.get('name')}\n"
+            f"URL: {source.get('url')}\n"
+            f"Description: {source.get('description') or 'N/A'}\n"
+            f"Stars: {source.get('stars')}\n"
+            f"Language: {source.get('language')}\n"
+            f"Updated: {source.get('updated_at')}\n"
+            "Status: GITHUB_CANDIDATE; verify license, files, documentation, and reproducibility before use.\n"
+        )
+    return "\n".join(lines)
+
+
+def read_agent_stream(request_id: str) -> str:
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "X-Principal-Id": PRINCIPAL_ID,
+    }
+    response = requests.get(
+        f"{BASE_URL.rstrip('/')}/api/agent/run/stream",
+        headers=headers,
+        params={"requestId": request_id},
+        stream=True,
+        timeout=(30, 300),
+    )
+    response.raise_for_status()
+
+    full_response = ""
+    try:
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            try:
+                data = json.loads(line[5:])
+            except json.JSONDecodeError:
+                continue
+
+            event_type = data.get("eventType")
+            if event_type in {"TEXT_START", "TEXT_DELTA"}:
+                full_response += data.get("data", {}).get("text", "")
+            if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
+                if full_response.strip():
+                    break
+    except requests.exceptions.RequestException:
+        if not full_response.strip():
+            raise
+
+    if not full_response.strip():
+        raise RuntimeError("Proposal agent stream ended without returning text.")
+    return full_response.strip()
+
+
+def run_proposal_agent(
+    research_question: str,
+    deep_literature_review: str,
+    github_public_sources: str = "",
+) -> str:
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}",
+        "X-Principal-Id": PRINCIPAL_ID,
+    }
+    body = {
+        "agentId": AGENT_ID,
+        "userInput": (
+            PROPOSAL_SYSTEM_PROMPT
+            + "\n\nSelected research question:\n"
+            + research_question
+            + "\n\nDeep literature review:\n"
+            + deep_literature_review
+            + "\n\nGitHub public dataset search results:\n"
+            + github_public_sources
+        ),
+    }
+    if SEND_MODEL_TO_AGENT_API and MODEL:
+        body["model"] = MODEL
+
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.post(
+                f"{BASE_URL.rstrip('/')}/api/agent/run/async",
+                headers=headers,
+                json=body,
+                timeout=(60, 300),
+            )
+            response.raise_for_status()
+            request_id = response.json()["data"]["requestId"]
+            print("Got requestId:", request_id)
+            return read_agent_stream(request_id)
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            print(f"Proposal API request failed on attempt {attempt}/3: {exc}")
+            if attempt < 3:
+                time.sleep(5 * attempt)
+        except RuntimeError as exc:
+            last_error = exc
+            print(f"Proposal API stream failed on attempt {attempt}/3: {exc}")
+            if attempt < 3:
+                time.sleep(5 * attempt)
+
+    raise RuntimeError(f"Proposal API unavailable: {last_error}")
+
+
+def fallback_proposal(research_question: str, reason: str) -> str:
+    return f"""RESEARCH QUESTION:
+{research_question}
+
+HYPOTHESIS:
+Proposal generation is pending because the live Proposal Agent was unavailable.
+
+EXPERIMENT DESIGN:
+Pending. The experiment must be designed from verified public datasets identified in the Deep Literature stage.
+
+PUBLIC DATA SOURCES:
+- TO_VERIFY: Public datasets named in the Deep Literature review must be verified before experiment execution.
+
+DATA COLLECTION PLAN:
+The Experiment Agent should retrieve only confirmed public datasets from prior work, Kaggle, Hugging Face Datasets, UCI, Papers With Code, arXiv-linked repositories, GitHub, or other legitimate public repositories.
+
+METHODOLOGY:
+Pending. Do not run or report an experiment until public data sources, baselines, metrics, and evaluation protocol are verified.
+
+KEY VARIABLES:
+- Independent variables: TO_VERIFY
+- Dependent variables: TO_VERIFY
+- Control variables: TO_VERIFY
+
+SUCCESS CRITERIA:
+- Data source is public and reproducible.
+- Metrics and baselines are explicitly defined.
+- Results can be independently reproduced from downloaded/public data.
+
+FEASIBILITY CHECK:
+Fallback proposal only. Live proposal generation failed: {reason}
+
+LIMITATIONS AND RISKS:
+- The experiment design is not complete.
+- Dataset availability has not been verified.
+"""
+
+
+def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
+    print("\n[Proposal Agent] Designing experiment proposal...")
+    deep_literature_text = read_text_or_path(deep_literature_review)
+    print("[Proposal Agent] Searching GitHub for public dataset candidates...")
+    github_sources = search_github_public_datasets(research_question)
+    github_sources_text = format_github_sources_for_prompt(github_sources)
+    try:
+        return run_proposal_agent(research_question, deep_literature_text, github_sources_text)
+    except Exception as exc:
+        print(f"Proposal failed; using placeholder. Reason: {exc}")
+        return fallback_proposal(research_question, str(exc))
+
+
+if __name__ == "__main__":
+    question = input("Enter selected research question: ")
+    review_path = input("Enter deep literature review path or paste text: ")
+    print(run_proposal_stage(question, review_path))
