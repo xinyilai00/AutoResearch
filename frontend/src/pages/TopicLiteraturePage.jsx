@@ -99,7 +99,12 @@ export default function TopicLiteraturePage({ autonomous, onComplete }) {
         </button>
       </div>
 
-      {status && <p className="auto-note">{status}</p>}
+      {status && (
+        <div className="status-indicator">
+            <div className="spinner"></div>
+            <p>{status}</p>
+        </div>
+    )}
 
       {error && (
         <div className="warning-box">
