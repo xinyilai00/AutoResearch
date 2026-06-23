@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import json
 import math
 import re
@@ -78,7 +79,13 @@ def extract_execution_spec(proposal: str) -> dict:
     raise ValueError("Execution spec JSON object is incomplete.")
 
 
-SUPPORTED_RUNNER_TYPES = {"universal_tabular_csv", "direct_csv", "multi_csv", "universal_data_file"}
+SUPPORTED_RUNNER_TYPES = {
+    "universal_tabular_csv",
+    "direct_csv",
+    "multi_csv",
+    "universal_data_file",
+    "financial_sentiment_timeseries",
+}
 SUPPORTED_TASK_TYPES = {"classification", "regression", "auto", "inspect"}
 SUPPORTED_METRICS = {"accuracy", "mae", "rmse", "r2", "none", "inspect"}
 SUPPORTED_DATA_EXTENSIONS = {".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".zip"}
@@ -92,7 +99,18 @@ def needs_redesign(spec: dict) -> str | None:
         return f"runner_type '{runner_type}' is not supported by the current Experiment Agent."
 
     task_type = str(spec.get("task_type", "")).lower()
+    workflow_runner = runner_type == "financial_sentiment_timeseries"
     inspect_only = runner_type == "universal_data_file" and task_type == "inspect"
+    if workflow_runner:
+        required = ["task_type", "target_column", "success_metric"]
+        for key in required:
+            value = spec.get(key)
+            if not value or str(value).strip().upper() == "TO_VERIFY":
+                return f"Execution spec field '{key}' is missing or TO_VERIFY."
+        if task_type not in {"regression", "auto"}:
+            return "financial_sentiment_timeseries supports regression or auto task_type."
+        return None
+
     required = ["task_type", "success_metric"] if inspect_only else ["task_type", "target_column", "success_metric"]
     for key in required:
         value = spec.get(key)
@@ -677,6 +695,309 @@ def run_universal_data_file_experiment(spec: dict, output_path: Path) -> str:
     return write_outputs(output_path, result)
 
 
+POSITIVE_WORDS = {
+    "beat",
+    "beats",
+    "bullish",
+    "gain",
+    "gains",
+    "growth",
+    "improve",
+    "improved",
+    "profit",
+    "profits",
+    "record",
+    "rise",
+    "rises",
+    "strong",
+    "surge",
+    "up",
+}
+NEGATIVE_WORDS = {
+    "bearish",
+    "decline",
+    "declines",
+    "down",
+    "drop",
+    "drops",
+    "fall",
+    "falls",
+    "loss",
+    "losses",
+    "miss",
+    "misses",
+    "risk",
+    "risks",
+    "weak",
+    "warning",
+}
+
+
+def simple_financial_sentiment(text: str) -> float:
+    words = re.findall(r"[A-Za-z]+", text.lower())
+    if not words:
+        return 0.0
+    positive = sum(1 for word in words if word in POSITIVE_WORDS)
+    negative = sum(1 for word in words if word in NEGATIVE_WORDS)
+    return (positive - negative) / max(1, positive + negative)
+
+
+def normalize_date(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
+        try:
+            return dt.datetime.strptime(text[:10], fmt).date().isoformat()
+        except ValueError:
+            pass
+    return text[:10]
+
+
+def parse_float(value: object) -> float | None:
+    return numeric_value(value)
+
+
+def find_column(row: dict, candidates: list[str]) -> str | None:
+    normalized = {
+        re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_"): key
+        for key in row.keys()
+    }
+    for candidate in candidates:
+        normalized_candidate = re.sub(r"[^a-z0-9]+", "_", candidate.lower()).strip("_")
+        if normalized_candidate in normalized:
+            return normalized[normalized_candidate]
+    return None
+
+
+def rows_from_direct_financial_files(spec: dict, output_path: Path) -> tuple[list[dict], list[dict], list[Path], list[dict]]:
+    file_urls = [
+        url
+        for url in dataset_urls_from_spec(spec)
+        if url.upper() != "TO_VERIFY" and looks_like_supported_data_file(url)
+    ]
+    if not file_urls:
+        return [], [], [], []
+
+    file_spec = dict(spec)
+    file_spec["dataset_url"] = file_urls[0]
+    file_spec["dataset_urls"] = file_urls
+    rows, paths, inventory = load_universal_data_files(file_spec, output_path)
+
+    price_rows = []
+    headline_rows = []
+    for row in rows:
+        date_col = find_column(row, ["date", "datetime", "timestamp"])
+        close_col = find_column(row, ["close", "adj close", "adj_close", "adjusted_close"])
+        headline_col = find_column(row, ["headline", "title", "text", "article", "content"])
+        if date_col and close_col:
+            price_rows.append(row)
+        elif date_col and headline_col:
+            headline_rows.append(row)
+    return price_rows, headline_rows, paths, inventory
+
+
+def load_yfinance_price_rows(spec: dict, output_path: Path) -> tuple[list[dict], list[Path], list[str]]:
+    tickers = spec.get("tickers") or spec.get("symbols") or ["AAPL", "MSFT", "GOOGL"]
+    if isinstance(tickers, str):
+        tickers = [item.strip() for item in re.split(r"[,;\\s]+", tickers) if item.strip()]
+    start = str(spec.get("start_date") or "2021-01-01")
+    end = str(spec.get("end_date") or "2024-12-31")
+    warnings = []
+
+    try:
+        import yfinance as yf
+    except Exception as exc:
+        return [], [], [f"yfinance unavailable: {exc}"]
+
+    rows = []
+    paths = []
+    for ticker in tickers[:10]:
+        try:
+            frame = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+        except Exception as exc:
+            warnings.append(f"yfinance failed for {ticker}: {exc}")
+            continue
+        if frame is None or frame.empty:
+            warnings.append(f"yfinance returned no rows for {ticker}.")
+            continue
+
+        csv_path = output_path / f"yfinance_{ticker}.csv"
+        try:
+            frame.to_csv(csv_path)
+            paths.append(csv_path)
+        except Exception:
+            pass
+
+        previous_close = None
+        for index, record in frame.reset_index().iterrows():
+            close_value = float(record.get("Close"))
+            date_value = record.get("Date")
+            if previous_close and previous_close > 0:
+                daily_log_return = math.log(close_value / previous_close)
+            else:
+                daily_log_return = 0.0
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "date": str(date_value)[:10],
+                    "close": close_value,
+                    "daily_log_return": daily_log_return,
+                    "volume": float(record.get("Volume") or 0),
+                }
+            )
+            previous_close = close_value
+    return rows, paths, warnings
+
+
+def add_next_day_target(price_rows: list[dict], target_column: str) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+    for row in price_rows:
+        ticker = str(row.get("ticker") or "UNKNOWN")
+        grouped.setdefault(ticker, []).append(row)
+
+    output_rows = []
+    for ticker_rows in grouped.values():
+        ticker_rows = sorted(ticker_rows, key=lambda row: str(row.get("date", "")))
+        for index, row in enumerate(ticker_rows[:-1]):
+            current_close = parse_float(row.get("close"))
+            next_close = parse_float(ticker_rows[index + 1].get("close"))
+            if current_close and next_close and current_close > 0:
+                row[target_column] = math.log(next_close / current_close)
+                output_rows.append(row)
+    return output_rows
+
+
+def aggregate_headline_sentiment(headline_rows: list[dict]) -> dict[tuple[str, str], dict]:
+    grouped: dict[tuple[str, str], list[float]] = {}
+    for row in headline_rows:
+        if not row:
+            continue
+        date_col = find_column(row, ["date", "datetime", "timestamp"])
+        text_col = find_column(row, ["headline", "title", "text", "article", "content"])
+        ticker_col = find_column(row, ["ticker", "symbol", "stock"])
+        if not date_col or not text_col:
+            continue
+        date_value = normalize_date(row.get(date_col))
+        ticker = str(row.get(ticker_col) or "MARKET").upper()
+        grouped.setdefault((ticker, date_value), []).append(simple_financial_sentiment(str(row.get(text_col))))
+
+    features = {}
+    for key, values in grouped.items():
+        features[key] = {
+            "sentiment_mean": statistics.mean(values),
+            "sentiment_disagreement": statistics.pstdev(values) if len(values) > 1 else 0.0,
+            "headline_count": len(values),
+        }
+    return features
+
+
+def merge_sentiment_features(price_rows: list[dict], headline_rows: list[dict]) -> list[dict]:
+    sentiment_by_key = aggregate_headline_sentiment(headline_rows)
+    merged = []
+    for row in price_rows:
+        ticker = str(row.get("ticker") or "MARKET").upper()
+        date_value = normalize_date(row.get("date"))
+        sentiment = sentiment_by_key.get((ticker, date_value)) or sentiment_by_key.get(("MARKET", date_value)) or {}
+        merged_row = dict(row)
+        merged_row["sentiment_mean"] = sentiment.get("sentiment_mean", 0.0)
+        merged_row["sentiment_disagreement"] = sentiment.get("sentiment_disagreement", 0.0)
+        merged_row["headline_count"] = sentiment.get("headline_count", 0)
+        merged.append(merged_row)
+    return merged
+
+
+def run_financial_sentiment_timeseries_experiment(spec: dict, output_path: Path) -> str:
+    output_path.mkdir(parents=True, exist_ok=True)
+    target_column = str(spec.get("target_column") or "next_day_log_return")
+    warnings = []
+    output_files = []
+
+    price_rows, headline_rows, data_paths, inventory = rows_from_direct_financial_files(spec, output_path)
+    output_files.extend(str(path) for path in data_paths)
+
+    if not price_rows:
+        yf_rows, yf_paths, yf_warnings = load_yfinance_price_rows(spec, output_path)
+        price_rows.extend(yf_rows)
+        output_files.extend(str(path) for path in yf_paths)
+        warnings.extend(yf_warnings)
+
+    if not headline_rows:
+        warnings.append("No direct headline dataset was loaded. Kaggle/Hugging Face dataset pages require manual download, direct file URLs, or credentials.")
+
+    if not price_rows:
+        result = ExperimentResult(
+            status="DATA_LOADED_REDESIGN_NEEDED",
+            hypothesis_supported="UNDETERMINED",
+            redesign_needed=True,
+            summary=(
+                "financial_sentiment_timeseries could not run because no usable OHLCV price rows were loaded. "
+                "Provide a direct local/HTTP price CSV or install/configure yfinance with network access."
+            ),
+            dataset_name=str(spec.get("dataset_name", "Financial sentiment time series")),
+            dataset_url=", ".join(dataset_urls_from_spec(spec)),
+            runner_type="financial_sentiment_timeseries",
+            task_type=str(spec.get("task_type", "regression")),
+            target_column=target_column,
+            baseline=str(spec.get("baseline", "mean_prediction")),
+            metrics={"direct_files_loaded": len(data_paths), "inventoried_files": len(inventory)},
+            results={"warnings": warnings},
+            limitations=[
+                "This workflow runner supports local/direct OHLCV files or optional yfinance downloads.",
+                "Kaggle pages, FinBERT inference, LSTM/Transformer training, and Diebold-Mariano tests require extra dependencies and credentials.",
+            ],
+            output_files=output_files,
+        )
+        return write_outputs(output_path, result)
+
+    price_rows = add_next_day_target(price_rows, target_column)
+    merged_rows = merge_sentiment_features(price_rows, headline_rows)
+    merged_path = output_path / "financial_sentiment_panel.csv"
+    if merged_rows:
+        with merged_path.open("w", encoding="utf-8", newline="") as handle:
+            fieldnames = sorted({key for row in merged_rows for key in row.keys()})
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(merged_rows)
+        output_files.append(str(merged_path))
+
+    if not merged_rows:
+        raise ValueError("No rows remained after next-day target construction.")
+
+    metrics, results = run_regression(merged_rows, target_column)
+    hypothesis_supported = decide_hypothesis_support(spec, metrics)
+    result = ExperimentResult(
+        status="COMPLETED",
+        hypothesis_supported=hypothesis_supported,
+        redesign_needed=False,
+        summary=(
+            "financial_sentiment_timeseries completed a runnable baseline using available OHLCV rows "
+            "and lightweight sentiment features when headline rows were available."
+        ),
+        dataset_name=str(spec.get("dataset_name", "Financial sentiment time series")),
+        dataset_url=", ".join(dataset_urls_from_spec(spec)),
+        runner_type="financial_sentiment_timeseries",
+        task_type="regression",
+        target_column=target_column,
+        baseline=str(spec.get("baseline", "mean_prediction")),
+        metrics=metrics | {
+            "price_rows": len(price_rows),
+            "headline_rows": len(headline_rows),
+            "panel_rows": len(merged_rows),
+        },
+        results=results | {"warnings": warnings},
+        limitations=[
+            "This runner currently executes a safe baseline, not full LSTM/Transformer training.",
+            "FinBERT is represented by a lightweight lexical sentiment fallback unless a future transformer inference module is added.",
+            "Kaggle dataset pages require credentials or direct downloaded files.",
+            "Diebold-Mariano tests and regime-stratified analysis are not implemented in this safe baseline runner yet.",
+        ],
+        output_files=[*output_files, str(output_path / "experiment_result.json"), str(output_path / "experiment_output.md")],
+    )
+    return write_outputs(output_path, result)
+
+
+
 def run_experiment_stage(
     proposal_input: str | Path,
     output_dir: str | Path = "paper_runs/latest/experiment",
@@ -698,6 +1019,8 @@ def run_experiment_stage(
         runner_type = str(spec.get("runner_type", "universal_tabular_csv")).lower()
         if runner_type == "universal_data_file":
             return run_universal_data_file_experiment(spec, output_path)
+        if runner_type == "financial_sentiment_timeseries":
+            return run_financial_sentiment_timeseries_experiment(spec, output_path)
 
         rows, data_paths = load_csvs(spec, output_path)
         target_column = str(spec["target_column"]).strip()
