@@ -79,7 +79,7 @@ LIMITATIONS AND RISKS:
 
 EXPERIMENT EXECUTION SPEC:
 {
-  "runner_type": "universal_tabular_csv, universal_data_file, or NEEDS_NEW_RUNNER",
+  "runner_type": "universal_tabular_csv, universal_data_file, financial_sentiment_timeseries, or NEEDS_NEW_RUNNER",
   "task_type": "classification, regression, auto, or inspect",
   "dataset_url": "primary direct public data file URL, raw GitHub file URL, local data path, or TO_VERIFY",
   "dataset_urls": ["one or more direct public data file URLs or local data paths"],
@@ -98,6 +98,8 @@ Rules for EXPERIMENT EXECUTION SPEC:
 - Use runner_type universal_tabular_csv when the experiment can be run from one or more direct/local CSV files with classification, regression, or auto task inference.
 - Use runner_type universal_data_file when the experiment can start from direct downloadable CSV, TSV, JSON, JSONL, NDJSON, or ZIP files, even if those files need inspection before modeling.
 - Use task_type inspect with universal_data_file when the files can be downloaded/inspected but the target column or modeling task is not yet executable.
+- Use runner_type financial_sentiment_timeseries for stock-return forecasting experiments that combine OHLCV data, financial news/headlines, FinBERT or sentiment features, FRED/VIX regime data, and time-series regression targets.
+- financial_sentiment_timeseries can run a safe baseline from local/direct OHLCV files or optional yfinance downloads, and it can use headline files when directly provided. It cannot automatically access Kaggle pages without credentials.
 - Use runner_type NEEDS_NEW_RUNNER when the real experiment requires web scraping, credentialed APIs, API pagination, NLP extraction from many documents, images, PDFs, custom simulation, graph construction, reinforcement learning, complex time series/backtesting, causal inference, SHAP, bootstrapping, or unsupported metrics.
 - Use AUTO_TARGET when a direct CSV is available but its schema has not been inspected yet.
 - Use task_type auto when a direct CSV is available but the target type is not known yet.
