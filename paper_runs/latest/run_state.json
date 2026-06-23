@@ -1,19 +1,32 @@
 {
   "active_outputs": {
+<<<<<<< HEAD
     "pi": "paper_runs/latest/stage_outputs/pi_output_v22.md",
     "literature": "paper_runs/latest/stage_outputs/literature_output_v19.md",
     "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v14.md",
     "deep_literature": "paper_runs/latest/stage_outputs/deep_literature_output_v10.md",
     "research_question": "paper_runs/latest/stage_outputs/research_question_output_v07.md",
     "proposal": "paper_runs/latest/stage_outputs/proposal_output_v02.md"
+=======
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v01.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v01.md",
+    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v01.md",
+    "research_question": "paper_runs/latest/stage_outputs/research_question_output_v01.md",
+    "deep_literature": "paper_runs/latest/stage_outputs/deep_literature_output_v01.md"
+>>>>>>> 7f3d5d910d84ffcc4035327589d8d8aa78071cf5
   },
   "stage_status": {
     "pi": "generated",
     "literature": "generated",
     "research_questions": "generated",
+<<<<<<< HEAD
     "deep_literature": "generated",
     "research_question": "generated",
     "proposal": "generated"
+=======
+    "research_question": "generated",
+    "deep_literature": "generated"
+>>>>>>> 7f3d5d910d84ffcc4035327589d8d8aa78071cf5
   },
   "versions": {
     "pi": [
@@ -21,6 +34,7 @@
         "version": 1,
         "path": "paper_runs/latest/stage_outputs/pi_output_v01.md",
         "status": "generated"
+<<<<<<< HEAD
       },
       {
         "version": 2,
@@ -126,6 +140,8 @@
         "version": 22,
         "path": "paper_runs/latest/stage_outputs/pi_output_v22.md",
         "status": "generated"
+=======
+>>>>>>> 7f3d5d910d84ffcc4035327589d8d8aa78071cf5
       }
     ],
     "literature": [
@@ -133,6 +149,7 @@
         "version": 1,
         "path": "paper_runs/latest/stage_outputs/literature_output_v01.md",
         "status": "generated"
+<<<<<<< HEAD
       },
       {
         "version": 2,
@@ -223,6 +240,8 @@
         "version": 19,
         "path": "paper_runs/latest/stage_outputs/literature_output_v19.md",
         "status": "generated"
+=======
+>>>>>>> 7f3d5d910d84ffcc4035327589d8d8aa78071cf5
       }
     ],
     "research_questions": [
@@ -230,6 +249,7 @@
         "version": 1,
         "path": "paper_runs/latest/stage_outputs/research_questions_output_v01.md",
         "status": "generated"
+<<<<<<< HEAD
       },
       {
         "version": 2,
@@ -347,6 +367,8 @@
         "version": 10,
         "path": "paper_runs/latest/stage_outputs/deep_literature_output_v10.md",
         "status": "generated"
+=======
+>>>>>>> 7f3d5d910d84ffcc4035327589d8d8aa78071cf5
       }
     ],
     "research_question": [
@@ -354,6 +376,7 @@
         "version": 1,
         "path": "paper_runs/latest/stage_outputs/research_question_output_v01.md",
         "status": "generated"
+<<<<<<< HEAD
       },
       {
         "version": 2,
@@ -453,5 +476,20 @@
   },
   "metadata": {
     "topic": "Kendrick Lamar effect on racial bonding"
+=======
+      }
+    ],
+    "deep_literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v01.md",
+        "status": "generated"
+      }
+    ]
+  },
+  "feedback": {},
+  "metadata": {
+    "topic": "AI in medical field"
+>>>>>>> 7f3d5d910d84ffcc4035327589d8d8aa78071cf5
   }
 }
