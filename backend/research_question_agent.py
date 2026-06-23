@@ -7,7 +7,10 @@ from pathlib import Path
 
 import requests
 
-from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+try:
+    from .config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+except ImportError:
+    from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 
 RESEARCH_QUESTION_SYSTEM_PROMPT = """
@@ -26,6 +29,8 @@ Rules:
 - Each question must be feasible for an AI research pipeline to investigate autonomously using computational methods, public datasets, public repositories, database records, simulations, or synthetically generated data.
 - Do NOT propose questions requiring physical experiments, lab equipment, human subjects, private/proprietary data, or impossible data collection.
 - Do NOT fabricate citations, datasets, or prior findings.
+- If you mention citations, use author-year format only, such as (Smith, 2023).
+- Do NOT use or preserve numeric citation markers such as [1], [22], [2,5], or [3-6].
 - Rank questions from most to least promising.
 - Return plain text only.
 - Do not add text before CANDIDATE RESEARCH QUESTIONS or after the final question.

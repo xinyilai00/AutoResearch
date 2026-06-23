@@ -220,6 +220,7 @@ Rules:
 - Every list must contain strings.
 - If evidence is missing, say so in weaknesses.
 - If citations are unverified, say so in weaknesses.
+- Flag any numeric citation markers such as [1], [22], [2,5], or [3-6] as citation issues.
 - Return JSON only.
 
 Check specifically for:
@@ -273,6 +274,8 @@ Rules:
 - Do not fabricate citations, datasets, statistics, or results.
 - If experiments are weak or missing, state that clearly.
 - If citations are unverified, mark them TODO.
+- Use author-year in-text citations only, such as (Smith, 2023).
+- Replace any numeric citation markers such as [1], [22], [2,5], or [3-6] with author-year citations when the author/year is available; otherwise mark them as citation TODO.
 - Keep the required paper sections.
 
 Review:
