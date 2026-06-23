@@ -9,7 +9,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+try:
+    from .config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+except ImportError:
+    from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 
 DEFAULT_MODEL = os.environ.get("PAPER_AGENT_MODEL", MODEL)
@@ -47,6 +50,9 @@ Rules:
 - If a prior stage is missing, explicitly label it as missing or provisional.
 - Keep Results separate from Discussion.
 - Use verified citations only when provided.
+- Use author-year in-text citations only, such as (Smith, 2023) or (Smith & Lee, 2023).
+- Never use numeric citation markers such as [1], [2,5], or [3-6] in the paper body.
+- In References, format entries in author-year style instead of numbered bracket style.
 - Include graph, table, workflow diagram, and picture references where useful.
 - For each visual, include caption, data source/provenance, and generation prompt.
 - Output only the paper. Do not narrate your intent or mention PDF generation.
@@ -295,14 +301,70 @@ def has_required_paper_sections(text: str) -> bool:
     return all(re.search(rf"(?m)^##?\s+.*{section}", lowered) for section in required)
 
 
-def normalize_paper_draft(draft: str) -> str:
+def author_year_label(authors: str, year: str, title: str = "") -> str:
+    author_list = [author.strip() for author in authors.split(",") if author.strip()]
+    clean_year = year.strip() or "n.d."
+
+    if not author_list:
+        title_words = [word.strip(":;,.") for word in title.split() if word.strip(":;,.")]
+        lead = " ".join(title_words[:3]) if title_words else "Unknown"
+        return f"{lead}, {clean_year}"
+
+    first_author = author_list[0]
+    surname = first_author.split()[-1] if first_author.split() else first_author
+    if len(author_list) == 1:
+        return f"{surname}, {clean_year}"
+    if len(author_list) == 2:
+        second_author = author_list[1]
+        second_surname = second_author.split()[-1] if second_author.split() else second_author
+        return f"{surname} & {second_surname}, {clean_year}"
+    return f"{surname} et al., {clean_year}"
+
+
+def citation_lookup_from_stage_inputs(stage_inputs: str) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    lines = stage_inputs.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(r"^\[(\d+)\]\s+(.+?)\s+\((\d{4}|n\.d\.|N/A|)\)", line.strip())
+        if not match:
+            continue
+
+        citation_number, title, year = match.groups()
+        authors = ""
+        if index + 1 < len(lines):
+            author_match = re.match(r"^Authors:\s*(.+)$", lines[index + 1].strip(), flags=re.IGNORECASE)
+            if author_match:
+                authors = author_match.group(1)
+                if authors.upper() == "N/A":
+                    authors = ""
+
+        lookup[citation_number] = author_year_label(authors, year or "n.d.", title)
+    return lookup
+
+
+def replace_numeric_citation_markers(draft: str, citation_lookup: dict[str, str]) -> str:
+    def replacement(match: re.Match[str]) -> str:
+        raw_numbers = re.split(r"\s*,\s*", match.group(1).strip())
+        labels = []
+        for number in raw_numbers:
+            label = citation_lookup.get(number)
+            if label:
+                labels.append(label)
+            else:
+                labels.append("citation TODO: author-year needed")
+        return "(" + "; ".join(labels) + ")"
+
+    return re.sub(r"\[(\d+(?:\s*,\s*\d+)*)\]", replacement, draft)
+
+
+def normalize_paper_draft(draft: str, stage_inputs: str = "") -> str:
     draft = draft.strip()
     if not draft:
         return fallback_paper()
     if looks_like_meta_response(draft) or not has_required_paper_sections(draft):
         print("Paper model returned a summary or incomplete draft; using provisional fallback draft.")
         return fallback_paper()
-    return draft
+    return replace_numeric_citation_markers(draft, citation_lookup_from_stage_inputs(stage_inputs))
 
 
 def choose_model(model_name: str) -> ChatModel:
@@ -432,6 +494,7 @@ Hard rules:
 - Do not say "I will", "I'll", "Here is", "completed", "delivered", or mention PDF generation.
 - Do not summarize the paper. Write the actual paper body.
 - Target at least 4,000 words when possible.
+- Use author-year in-text citations only. Do not use numeric citation markers like [1] or [2,5].
 
 {PAPER_REQUIREMENTS}
 
@@ -447,7 +510,7 @@ Stage inputs:
             temperature=config.temperature,
             max_tokens=max(config.max_tokens, 14000),
         )
-    return normalize_paper_draft(draft)
+    return normalize_paper_draft(draft, stage_inputs)
 
 
 def generate_visual_manifest(model: ChatModel, draft: str, config: AgentConfig) -> str:
