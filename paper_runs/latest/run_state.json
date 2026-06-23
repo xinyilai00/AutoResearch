@@ -1,0 +1,84 @@
+{
+  "active_outputs": {
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v01.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v01.md",
+    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v01.md",
+    "research_question": "paper_runs/latest/stage_outputs/research_question_output_v01.md",
+    "deep_literature": "paper_runs/latest/stage_outputs/deep_literature_output_v01.md",
+    "proposal": "paper_runs/latest/stage_outputs/proposal_output_v01.md",
+    "experiment": "paper_runs/latest/stage_outputs/experiment_output_v01.md"
+  },
+  "stage_status": {
+    "pi": "generated",
+    "literature": "generated",
+    "research_questions": "generated",
+    "research_question": "generated",
+    "deep_literature": "generated",
+    "proposal": "generated",
+    "experiment": "redesign_needed",
+    "paper": "revised",
+    "review": "generated"
+  },
+  "versions": {
+    "pi": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v01.md",
+        "status": "generated"
+      }
+    ],
+    "literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v01.md",
+        "status": "generated"
+      }
+    ],
+    "research_questions": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v01.md",
+        "status": "generated"
+      }
+    ],
+    "research_question": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/research_question_output_v01.md",
+        "status": "generated"
+      }
+    ],
+    "deep_literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v01.md",
+        "status": "generated"
+      }
+    ],
+    "proposal": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/proposal_output_v01.md",
+        "status": "generated"
+      }
+    ],
+    "experiment": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/experiment_output_v01.md",
+        "status": "redesign_needed"
+      }
+    ]
+  },
+  "feedback": {
+    "paper": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/feedback/paper_feedback_01.md"
+      }
+    ]
+  },
+  "metadata": {
+    "topic": "Halloween candy on kids' dental health"
+  }
+}

@@ -1,0 +1,1 @@
+To what extent do different candy types commonly distributed at Halloween (chocolate, gummy/sticky candies, hard candies, sour candies) differ in their predicted cariogenic and erosive potential based on computational modeling of sugar release kinetics, oral retention time, and acidogenic pH profiles?
