@@ -68,7 +68,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, onCom
 
   return (
     <div className="stage-page">
-      <h1>Deep Literature Agent</h1>
+      <h1>Literature Review</h1>
       <p>Conducts a targeted literature review focused on your selected research question.</p>
 
       {!selectedQuestion && (
@@ -89,7 +89,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, onCom
               onClick={() => handleRun()}
               disabled={running}
             >
-              {running ? "Running..." : "Run Deep Literature Agent"}
+              {running ? "Running..." : "Run Literature Review"}
             </button>
           </div>
         </>

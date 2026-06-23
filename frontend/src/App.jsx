@@ -19,7 +19,7 @@ const stages = [
   { label: "Dashboard", path: "/" },
   { label: "Topic & Literature", path: "/topic" },
   { label: "Research Question", path: "/research-question" },
-  { label: "Deep Literature", path: "/deep-literature" },
+  { label: "Literature Review", path: "/deep-literature" },
   { label: "Proposal", path: "/proposal" },
   { label: "Experiment", path: "/experiment" },
   { label: "Paper", path: "/paper" },

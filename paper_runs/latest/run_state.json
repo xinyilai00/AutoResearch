@@ -1,7 +1,7 @@
 {
   "active_outputs": {
-    "pi": "paper_runs/latest/stage_outputs/pi_output_v05.md",
-    "literature": "paper_runs/latest/stage_outputs/literature_output_v05.md",
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v06.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v06.md",
     "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v02.md"
   },
   "stage_status": {
@@ -35,6 +35,11 @@
         "version": 5,
         "path": "paper_runs/latest/stage_outputs/pi_output_v05.md",
         "status": "generated"
+      },
+      {
+        "version": 6,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v06.md",
+        "status": "generated"
       }
     ],
     "literature": [
@@ -62,6 +67,11 @@
         "version": 5,
         "path": "paper_runs/latest/stage_outputs/literature_output_v05.md",
         "status": "generated"
+      },
+      {
+        "version": 6,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v06.md",
+        "status": "generated"
       }
     ],
     "research_questions": [
@@ -79,6 +89,6 @@
   },
   "feedback": {},
   "metadata": {
-    "topic": "Coffee in teenager mental health"
+    "topic": "Classical music for attention span"
   }
 }
