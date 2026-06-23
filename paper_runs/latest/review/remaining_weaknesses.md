@@ -1,0 +1,18 @@
+# Review
+
+## Scores
+- Novelty: 2/5
+- Correctness: 1/5
+- Evidence: 1/5
+- Clarity: 4/5
+- Reproducibility: 2/5
+- Total: 10/25
+
+## Strengths
+- The paper is clearly written with well-organized sections, logical flow from introduction through methodology, and accessible explanations of the computational model components including the modified Stephan curve framework.
+
+## Weaknesses
+- The study was never executed and produces zero empirical results—the entire paper is an untested protocol, which fundamentally undermines its scientific contribution. Additionally, the draft contains over 20 explicit 'TODO: verify' markers indicating unverified citations (e.g., Gustafsson et al., 1954 volume/pages, Stephan 1944 details, ADA 2020 guidance, Dawes 2008, Featherstone 2000 volume/pages), incomplete references with placeholder fields like '[Title pending verification]' and '[Journal pending verification]', and unconfirmed data points such as the '3-5 kilograms per child' Halloween haul estimate attributed to National Confectioners Association (2021). The reference list is largely fabricated-looking, with most entries containing TODO placeholders rather than actual bibliographic information. The Discussion section speculates extensively about 'planned findings' and 'hypothesized rankings' as if they were results, constituting severe result/discussion leakage. The model parameters (dissolution rate constants, adhesiveness indices, K_m values) are acknowledged as estimated from 'limited food science literature and expert judgment' rather than empirically measured, yet no sensitivity analysis was actually performed. Statistical claims about planned ANOVA and Tukey HSD tests are meaningless without data. Figure and table descriptions reference data that does not exist.
+
+## Revision Plan
+- Either execute the computational simulation and report actual results with validated citations, or reframe the manuscript explicitly as a study protocol/pre-registration document with a substantially reduced scope, removing all speculative discussion of untested hypotheses, completing every TODO-marked citation with verified bibliographic details, and eliminating fabricated-looking placeholder references from the reference list.
