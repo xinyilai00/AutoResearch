@@ -1,1 +1,0 @@
-Does combining clinical imaging, structured EHR variables, and clinical notes in a multimodal deep learning model yield statistically significant improvements in in-hospital mortality prediction compared to optimized unimodal baselines, when evaluated on the MIMIC-IV dataset using a standardized experimental protocol?

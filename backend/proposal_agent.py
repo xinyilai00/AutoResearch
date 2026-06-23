@@ -159,14 +159,9 @@ RELEVANCE_STOPWORDS = {
 
 
 def read_text_or_path(value: str | Path) -> str:
-    if isinstance(value, str) and len(value) > 500:
-        return value
     path = Path(value)
-    try:
-        if path.exists():
-            return path.read_text(encoding="utf-8")
-    except OSError:
-        pass
+    if path.exists():
+        return path.read_text(encoding="utf-8")
     return str(value)
 
 
