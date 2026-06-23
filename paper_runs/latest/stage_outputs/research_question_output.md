@@ -1,0 +1,1 @@
+Under what market conditions does NLP-based sentiment analysis provide statistically significant incremental predictive power for US equity returns beyond what is achievable using pure time-series deep learning models on OHLCV data alone?

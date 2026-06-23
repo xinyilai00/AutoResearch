@@ -1,0 +1,31 @@
+# Experiment Results
+
+## Status
+REDESIGN_NEEDED
+
+## Hypothesis Supported
+UNDETERMINED
+
+## Summary
+Experiment was not executed: Proposal says this experiment requires a new specialized runner.
+
+## Dataset
+- Name: Multi-source: Yahoo Finance OHLCV + Kaggle financial news headlines + FinBERT sentiment + FRED VIX
+- URL/path: TO_VERIFY, https://www.kaggle.com/datasets/aaron7sun/stocknews, https://huggingface.co/datasets/takala/financial_phrasebank, https://fred.stlouisfed.org/series/VIXCLS
+- Target column: next_day_log_return
+
+## Method
+- Runner type: NEEDS_NEW_RUNNER
+- Task type: regression
+- Baseline: mean_prediction
+
+## Metrics
+
+## Results
+
+## Limitations
+- No empirical results were generated.
+- The current Experiment Agent can execute universal_tabular_csv and universal_data_file specs only.
+- Runner notes: This experiment requires a custom runner because it involves: (1) downloading OHLCV data programmatically via yfinance for 30-50 US equity tickers; (2) downloading and parsing financial news headline datasets from Kaggle (aaron7sun/stocknews or All-the-News); (3) running FinBERT inference (ProsusAI/finbert from Hugging Face) on headlines to generate daily sentiment features; (4) downloading VIX data from FRED; (5) constructing aligned daily feature matrices by merging OHLCV features with aggregated sentiment features per stock per date; (6) training LSTM and Transformer time-series models with walk-forward expanding-window validation; (7) stratifying out-of-sample results by market regime (high-vol vs. low-vol based on VIX percentile); (8) running Diebold-Mariano statistical tests on paired forecast errors per regime. The Experiment Agent should first verify that yfinance returns complete OHLCV data for the target tickers and date range, then verify that the Kaggle headline dataset covers the needed period and contains parseable date and headline columns. FinBERT must be loaded from Hugging Face and validated against the Financial PhraseBank labeled set before applying it to the full headline corpus. The target variable is the next-day log return computed as log(Close_t+1 / Close_t). The experiment must use walk-forward validation with no look-ahead bias. Regime classification uses VIX above/below the 75th percentile of the training-period VIX distribution. Report Diebold-Mariano test statistics and p-values per regime as the primary result.
+
+## Output Files
