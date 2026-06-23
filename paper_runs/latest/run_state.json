@@ -1,13 +1,17 @@
 {
   "active_outputs": {
-    "pi": "paper_runs/latest/stage_outputs/pi_output_v06.md",
-    "literature": "paper_runs/latest/stage_outputs/literature_output_v06.md",
-    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v02.md"
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v18.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v15.md",
+    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v10.md",
+    "deep_literature": "paper_runs/latest/stage_outputs/deep_literature_output_v06.md",
+    "research_question": "paper_runs/latest/stage_outputs/research_question_output_v03.md"
   },
   "stage_status": {
     "pi": "generated",
-    "literature": "generated",
-    "research_questions": "generated"
+    "literature": "revised",
+    "research_questions": "generated",
+    "deep_literature": "generated",
+    "research_question": "generated"
   },
   "versions": {
     "pi": [
@@ -39,6 +43,66 @@
       {
         "version": 6,
         "path": "paper_runs/latest/stage_outputs/pi_output_v06.md",
+        "status": "generated"
+      },
+      {
+        "version": 7,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v07.md",
+        "status": "generated"
+      },
+      {
+        "version": 8,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v08.md",
+        "status": "generated"
+      },
+      {
+        "version": 9,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v09.md",
+        "status": "generated"
+      },
+      {
+        "version": 10,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v10.md",
+        "status": "revised"
+      },
+      {
+        "version": 11,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v11.md",
+        "status": "generated"
+      },
+      {
+        "version": 12,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v12.md",
+        "status": "revised"
+      },
+      {
+        "version": 13,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v13.md",
+        "status": "generated"
+      },
+      {
+        "version": 14,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v14.md",
+        "status": "revised"
+      },
+      {
+        "version": 15,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v15.md",
+        "status": "generated"
+      },
+      {
+        "version": 16,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v16.md",
+        "status": "revised"
+      },
+      {
+        "version": 17,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v17.md",
+        "status": "generated"
+      },
+      {
+        "version": 18,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v18.md",
         "status": "generated"
       }
     ],
@@ -72,6 +136,51 @@
         "version": 6,
         "path": "paper_runs/latest/stage_outputs/literature_output_v06.md",
         "status": "generated"
+      },
+      {
+        "version": 7,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v07.md",
+        "status": "generated"
+      },
+      {
+        "version": 8,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v08.md",
+        "status": "generated"
+      },
+      {
+        "version": 9,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v09.md",
+        "status": "generated"
+      },
+      {
+        "version": 10,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v10.md",
+        "status": "revised"
+      },
+      {
+        "version": 11,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v11.md",
+        "status": "generated"
+      },
+      {
+        "version": 12,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v12.md",
+        "status": "revised"
+      },
+      {
+        "version": 13,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v13.md",
+        "status": "generated"
+      },
+      {
+        "version": 14,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v14.md",
+        "status": "generated"
+      },
+      {
+        "version": 15,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v15.md",
+        "status": "revised"
       }
     ],
     "research_questions": [
@@ -84,11 +193,151 @@
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/research_questions_output_v02.md",
         "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v04.md",
+        "status": "generated"
+      },
+      {
+        "version": 5,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v05.md",
+        "status": "generated"
+      },
+      {
+        "version": 6,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v06.md",
+        "status": "generated"
+      },
+      {
+        "version": 7,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v07.md",
+        "status": "generated"
+      },
+      {
+        "version": 8,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v08.md",
+        "status": "generated"
+      },
+      {
+        "version": 9,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v09.md",
+        "status": "generated"
+      },
+      {
+        "version": 10,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v10.md",
+        "status": "generated"
+      }
+    ],
+    "deep_literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v01.md",
+        "status": "generated"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v04.md",
+        "status": "revised"
+      },
+      {
+        "version": 5,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v05.md",
+        "status": "generated"
+      },
+      {
+        "version": 6,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v06.md",
+        "status": "generated"
+      }
+    ],
+    "research_question": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/stage_outputs/research_question_output_v01.md",
+        "status": "generated"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/stage_outputs/research_question_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/research_question_output_v03.md",
+        "status": "generated"
       }
     ]
   },
-  "feedback": {},
+  "feedback": {
+    "deep_literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/feedback/deep_literature_feedback_01.md"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/feedback/deep_literature_feedback_02.md"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/feedback/deep_literature_feedback_03.md"
+      }
+    ],
+    "pi": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/feedback/pi_feedback_01.md"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/feedback/pi_feedback_02.md"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/feedback/pi_feedback_03.md"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/feedback/pi_feedback_04.md"
+      }
+    ],
+    "literature": [
+      {
+        "version": 1,
+        "path": "paper_runs/latest/feedback/literature_feedback_01.md"
+      },
+      {
+        "version": 2,
+        "path": "paper_runs/latest/feedback/literature_feedback_02.md"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/feedback/literature_feedback_03.md"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/feedback/literature_feedback_04.md"
+      }
+    ]
+  },
   "metadata": {
-    "topic": "Classical music for attention span"
+    "topic": "Video games for teenage boys mental health"
   }
 }

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunProposalAgent(deepLitOutput, feedback, onChunk) {
+async function mockRunProposalAgent(deepLitOutput, feedback, onChunk, signal) {
   const fakeOutput = `HYPOTHESIS:
 Combining HRV, sleep quality, and activity metrics in a multivariate LSTM model will predict next-day athletic performance decrements with greater accuracy (AUC > 0.80) than any single-metric baseline model when evaluated using within-subject cross-validation.
 
@@ -43,38 +43,63 @@ ${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
 
   const words = fakeOutput.split(" ");
   for (const word of words) {
+    if (signal?.aborted) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
+    if (signal?.aborted) return;
     onChunk(word + " ");
   }
 }
 
-export default function ProposalPage({ autonomous, deepLitOutput, onComplete }) {
+export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput, onComplete }) {
   const navigate = useNavigate();
-  const [output, setOutput] = useState("");
+  const [output, setOutput] = useState(proposalOutput || "");
   const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(!!proposalOutput);
+  const [error, setError] = useState("");
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setOutput(proposalOutput || "");
+    setDone(!!proposalOutput);
+  }, [proposalOutput]);
 
   async function handleRun(feedback = null) {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setOutput("");
     setDone(false);
     setRunning(true);
+    setError("");
 
     let fullOutput = "";
     await mockRunProposalAgent(deepLitOutput, feedback, (chunk) => {
+      if (signal.aborted) return;
       fullOutput += chunk;
       setOutput((prev) => prev + chunk);
-    });
+    }, signal);
 
-    onComplete(fullOutput);
+    if (!signal.aborted) {
+      onComplete(fullOutput);
+      setDone(true);
+    }
     setRunning(false);
-    setDone(true);
   }
 
   useEffect(() => {
     if (done && autonomous) {
-      const timer = setTimeout(() => {
-        navigate("/experiment");
-      }, 1500);
+      const timer = setTimeout(() => navigate("/experiment"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
@@ -86,7 +111,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, onComplete }) 
 
       {!deepLitOutput && (
         <div className="warning-box">
-          No deep literature output found. Please complete the Deep Literature stage first.
+          No deep literature output found. Please complete the Literature Review stage first.
         </div>
       )}
 
@@ -97,7 +122,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, onComplete }) 
             onClick={() => handleRun()}
             disabled={running}
           >
-            {running ? "Running..." : "Run Proposal Agent"}
+            {running ? "Running..." : done ? "Rerun" : "Run Proposal Agent"}
           </button>
         </div>
       )}

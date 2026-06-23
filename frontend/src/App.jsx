@@ -64,8 +64,10 @@ function Layout({ children }) {
 
 function App() {
   const [autonomous, setAutonomous] = useState(false);
+
   const [topic, setTopic] = useState("");
   const [litOutput, setLitOutput] = useState("");
+  const [questions, setQuestions] = useState([]);
   const [selectedQuestion, setSelectedQuestion] = useState("");
   const [deepLitOutput, setDeepLitOutput] = useState("");
   const [proposalOutput, setProposalOutput] = useState("");
@@ -73,17 +75,117 @@ function App() {
   const [paperOutput, setPaperOutput] = useState("");
   const [reviewOutput, setReviewOutput] = useState("");
 
+  function completeLitOutput(output) {
+    setLitOutput(output);
+    setQuestions([]);
+    setSelectedQuestion("");
+    setDeepLitOutput("");
+    setProposalOutput("");
+    setExperimentOutput("");
+    setPaperOutput("");
+    setReviewOutput("");
+  }
+
+  function completeSelectedQuestion(question) {
+    setSelectedQuestion(question);
+    setDeepLitOutput("");
+    setProposalOutput("");
+    setExperimentOutput("");
+    setPaperOutput("");
+    setReviewOutput("");
+  }
+
+  function completeDeepLitOutput(output) {
+    setDeepLitOutput(output);
+    setProposalOutput("");
+    setExperimentOutput("");
+    setPaperOutput("");
+    setReviewOutput("");
+  }
+
+  function completeProposalOutput(output) {
+    setProposalOutput(output);
+    setExperimentOutput("");
+    setPaperOutput("");
+    setReviewOutput("");
+  }
+
+  function completeExperimentOutput(output) {
+    setExperimentOutput(output);
+    setPaperOutput("");
+    setReviewOutput("");
+  }
+
+  function completePaperOutput(output) {
+    setPaperOutput(output);
+    setReviewOutput("");
+  }
+
   return (
     <BrowserRouter>
       <Layout>
         <Routes>
           <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
-          <Route path="/topic" element={<TopicLiteraturePage autonomous={autonomous} onTopicSet={setTopic} onComplete={setLitOutput} />} />
-          <Route path="/research-question" element={<ResearchQuestionPage autonomous={autonomous} topic={topic} litOutput={litOutput} onComplete={setSelectedQuestion} />} />          <Route path="/deep-literature" element={<DeepLiteraturePage autonomous={autonomous} selectedQuestion={selectedQuestion} onComplete={setDeepLitOutput} />} />
-          <Route path="/proposal" element={<ProposalPage autonomous={autonomous} deepLitOutput={deepLitOutput} onComplete={setProposalOutput} />} />
-          <Route path="/experiment" element={<ExperimentPage autonomous={autonomous} proposalOutput={proposalOutput} onComplete={setExperimentOutput} />} />
-          <Route path="/paper" element={<PaperPage autonomous={autonomous} experimentOutput={experimentOutput} onComplete={setPaperOutput} />} />
-          <Route path="/review" element={<ReviewPage autonomous={autonomous} paperOutput={paperOutput} onComplete={setReviewOutput} />} />
+          <Route path="/topic" element={
+            <TopicLiteraturePage
+              autonomous={autonomous}
+              topic={topic}
+              onTopicSet={setTopic}
+              litOutput={litOutput}
+              onComplete={completeLitOutput}
+            />}
+          />
+          <Route path="/research-question" element={
+            <ResearchQuestionPage
+              autonomous={autonomous}
+              topic={topic}
+              litOutput={litOutput}
+              questions={questions}
+              onQuestionsGenerated={setQuestions}
+              selectedQuestion={selectedQuestion}
+              onComplete={completeSelectedQuestion}
+            />}
+          />
+          <Route path="/deep-literature" element={
+            <DeepLiteraturePage
+              autonomous={autonomous}
+              selectedQuestion={selectedQuestion}
+              deepLitOutput={deepLitOutput}
+              onComplete={completeDeepLitOutput}
+            />}
+          />
+          <Route path="/proposal" element={
+            <ProposalPage
+              autonomous={autonomous}
+              deepLitOutput={deepLitOutput}
+              proposalOutput={proposalOutput}
+              onComplete={completeProposalOutput}
+            />}
+          />
+          <Route path="/experiment" element={
+            <ExperimentPage
+              autonomous={autonomous}
+              proposalOutput={proposalOutput}
+              experimentOutput={experimentOutput}
+              onComplete={completeExperimentOutput}
+            />}
+          />
+          <Route path="/paper" element={
+            <PaperPage
+              autonomous={autonomous}
+              experimentOutput={experimentOutput}
+              paperOutput={paperOutput}
+              onComplete={completePaperOutput}
+            />}
+          />
+          <Route path="/review" element={
+            <ReviewPage
+              autonomous={autonomous}
+              paperOutput={paperOutput}
+              reviewOutput={reviewOutput}
+              onComplete={setReviewOutput}
+            />}
+          />
           <Route path="/rebuttal" element={<RebuttalPage autonomous={autonomous} reviewOutput={reviewOutput} />} />
           <Route path="/citations" element={<CitationsPage autonomous={autonomous} />} />
           <Route path="/files" element={<FilesPage autonomous={autonomous} />} />

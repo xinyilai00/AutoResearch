@@ -1,18 +1,41 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-export default function TopicLiteraturePage({ autonomous, onComplete, onTopicSet }) {
+export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, litOutput, onComplete }) {
   const navigate = useNavigate();
-  const [topic, setTopic] = useState("");
-  const [output, setOutput] = useState("");
+  const [localTopic, setLocalTopic] = useState(topic || "");
+  const [output, setOutput] = useState(litOutput || "");
   const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(!!litOutput);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const abortControllerRef = useRef(null);
+
+  // Cancel fetch on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setLocalTopic(topic || "");
+    setOutput(litOutput || "");
+    setDone(!!litOutput);
+  }, [topic, litOutput]);
 
   async function handleRun(feedback = null) {
-    if (!topic.trim()) return;
+    if (!localTopic.trim()) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setOutput("");
     setDone(false);
     setRunning(true);
@@ -20,39 +43,26 @@ export default function TopicLiteraturePage({ autonomous, onComplete, onTopicSet
     setStatus("Researching...");
 
     try {
-      // Step 1 — Run PI agent behind the scenes
       const piResponse = await fetch("http://localhost:8000/api/stages/pi/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: topic,
-          feedback: feedback
-        })
+        body: JSON.stringify({ topic: localTopic, feedback: feedback }),
+        signal: signal
       });
 
-      if (!piResponse.ok) {
-        throw new Error(`PI agent error: ${piResponse.status}`);
-      }
-
+      if (!piResponse.ok) throw new Error(`PI agent error: ${piResponse.status}`);
       const piData = await piResponse.json();
       const piOutput = piData.output || "";
 
-      // Step 2 — Run Literature agent with PI output
       setStatus("Generating literature review...");
       const litResponse = await fetch("http://localhost:8000/api/stages/literature/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: topic,
-          pi_output: piOutput,
-          feedback: feedback
-        })
+        body: JSON.stringify({ topic: localTopic, pi_output: piOutput, feedback: feedback }),
+        signal: signal
       });
 
-      if (!litResponse.ok) {
-        throw new Error(`Literature agent error: ${litResponse.status}`);
-      }
-
+      if (!litResponse.ok) throw new Error(`Literature agent error: ${litResponse.status}`);
       const litData = await litResponse.json();
       const fullOutput = litData.output || "";
       setOutput(fullOutput);
@@ -60,6 +70,11 @@ export default function TopicLiteraturePage({ autonomous, onComplete, onTopicSet
       setDone(true);
       setStatus("");
     } catch (err) {
+      if (err.name === "AbortError") {
+        setRunning(false);
+        setStatus("");
+        return;
+      }
       setError(`Something went wrong: ${err.message}`);
       setStatus("");
     } finally {
@@ -69,9 +84,7 @@ export default function TopicLiteraturePage({ autonomous, onComplete, onTopicSet
 
   useEffect(() => {
     if (done && autonomous) {
-      const timer = setTimeout(() => {
-        navigate("/research-question");
-      }, 1500);
+      const timer = setTimeout(() => navigate("/research-question"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
@@ -86,34 +99,30 @@ export default function TopicLiteraturePage({ autonomous, onComplete, onTopicSet
           className="topic-input"
           type="text"
           placeholder="e.g. transformer efficiency in NLP"
-          value={topic}
-            onChange={(e) => {
-              setTopic(e.target.value);
-              onTopicSet(e.target.value);
-            }}
+          value={localTopic}
+          onChange={(e) => {
+            setLocalTopic(e.target.value);
+            onTopicSet(e.target.value);
+          }}
           disabled={running}
         />
         <button
           className="run-button"
           onClick={() => handleRun()}
-          disabled={running || !topic.trim()}
+          disabled={running || !localTopic.trim()}
         >
-          {running ? "Running..." : "Run"}
+          {running ? "Running..." : done ? "Rerun" : "Run"}
         </button>
       </div>
 
       {status && (
         <div className="status-indicator">
-            <div className="spinner"></div>
-            <p>{status}</p>
-        </div>
-    )}
-
-      {error && (
-        <div className="warning-box">
-          {error}
+          <div className="spinner"></div>
+          <p>{status}</p>
         </div>
       )}
+
+      {error && <div className="warning-box">{error}</div>}
 
       {output && (
         <div className="output-box">

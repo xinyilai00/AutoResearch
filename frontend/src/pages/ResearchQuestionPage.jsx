@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 function parseQuestions(output) {
@@ -7,83 +7,105 @@ function parseQuestions(output) {
 
   for (const line of output.split("\n")) {
     const trimmed = line.trim();
-
     if (trimmed.toUpperCase().includes("CANDIDATE RESEARCH QUESTIONS")) {
       inSection = true;
       continue;
     }
-
     if (inSection && trimmed && /^\d+\./.test(trimmed)) {
       let q = trimmed.replace(/^\d+\.\s*/, "");
-      if (q.includes("| Gap addressed:")) {
-        q = q.split("| Gap addressed:")[0].trim();
-      }
-      if (q.includes("| Feasibility:")) {
-        q = q.split("| Feasibility:")[0].trim();
-      }
-      if (q.length > 30) {
-        questions.push(q);
-      }
+      if (q.includes("| Gap addressed:")) q = q.split("| Gap addressed:")[0].trim();
+      if (q.includes("| Feasibility:")) q = q.split("| Feasibility:")[0].trim();
+      if (q.length > 30) questions.push(q);
     }
   }
   return questions;
 }
 
-export default function ResearchQuestionPage({ autonomous, topic, litOutput, onComplete }) {
+export default function ResearchQuestionPage({ autonomous, topic, litOutput, questions, onQuestionsGenerated, selectedQuestion, onComplete }) {
   const navigate = useNavigate();
-  const [questions, setQuestions] = useState([]);
-  const [selected, setSelected] = useState("");
+  const [localSelected, setLocalSelected] = useState(selectedQuestion || "");
   const [custom, setCustom] = useState("");
   const [useCustom, setUseCustom] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(questions.length > 0);
   const [error, setError] = useState("");
+  const abortControllerRef = useRef(null);
+
+  // Cancel fetch on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    if (litOutput && topic) {
+    setLocalSelected(selectedQuestion || "");
+  }, [selectedQuestion]);
+
+  useEffect(() => {
+    if (litOutput && topic && questions.length === 0) {
       generateQuestions();
+    } else if (questions.length > 0) {
+      setReady(true);
     }
   }, [litOutput, topic]);
 
   async function generateQuestions() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setLoading(true);
     setError("");
     setReady(false);
-    setQuestions([]);
 
     try {
       const response = await fetch("http://localhost:8000/api/stages/research_questions/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: topic,
-          literature: litOutput
-        })
+        body: JSON.stringify({ topic: topic, literature: litOutput }),
+        signal: signal
       });
 
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
       const data = await response.json();
       const parsed = parseQuestions(data.output || "");
-      setQuestions(parsed);
+      onQuestionsGenerated(parsed);
       setReady(true);
     } catch (err) {
+      if (err.name === "AbortError") {
+        setLoading(false);
+        return;
+      }
       setError(`Something went wrong: ${err.message}`);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleConfirm() {
-    const finalQuestion = useCustom ? custom.trim() : selected;
+  async function handleConfirm() {
+    const finalQuestion = useCustom ? custom.trim() : localSelected;
     if (!finalQuestion) return;
+
+    try {
+      await fetch("http://localhost:8000/api/stages/research_question/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ research_question: finalQuestion })
+      });
+    } catch (err) {
+      console.error("Failed to save research question to backend:", err);
+    }
+
     onComplete(finalQuestion);
     navigate("/deep-literature");
   }
 
-  const finalQuestion = useCustom ? custom.trim() : selected;
+  const finalQuestion = useCustom ? custom.trim() : localSelected;
 
   return (
     <div className="stage-page">
@@ -103,17 +125,15 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, onC
         </div>
       )}
 
-      {error && (
-        <div className="warning-box">{error}</div>
-      )}
+      {error && <div className="warning-box">{error}</div>}
 
       {ready && !useCustom && (
         <div className="question-list">
           {questions.map((q, i) => (
             <div
               key={i}
-              className={`question-item ${selected === q ? "selected" : ""}`}
-              onClick={() => setSelected(q)}
+              className={`question-item ${localSelected === q ? "selected" : ""}`}
+              onClick={() => setLocalSelected(q)}
             >
               {i + 1}. {q}
             </div>
@@ -127,14 +147,10 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, onC
             <input
               type="checkbox"
               checked={useCustom}
-              onChange={() => {
-                setUseCustom(!useCustom);
-                setSelected("");
-              }}
+              onChange={() => { setUseCustom(!useCustom); setLocalSelected(""); }}
             />
             {" "}Enter my own research question
           </label>
-
           {useCustom && (
             <input
               className="topic-input"
@@ -161,7 +177,7 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, onC
           onClick={handleConfirm}
           disabled={!finalQuestion}
         >
-          Confirm & Continue to Deep Literature →
+          Confirm & Continue to Literature Review →
         </button>
       )}
     </div>

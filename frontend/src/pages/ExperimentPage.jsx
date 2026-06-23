@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunExperimentAgent(proposalOutput, feedback, onChunk) {
+async function mockRunExperimentAgent(proposalOutput, feedback, onChunk, signal) {
   const fakeOutput = `EXPERIMENT EXECUTION SUMMARY:
 The experiment was conducted using the PMDATA dataset containing 16 athletes monitored over 5 months. All data preprocessing, model training, and evaluation were completed using Python with scikit-learn and TensorFlow libraries.
 
@@ -36,38 +36,63 @@ ${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
 
   const words = fakeOutput.split(" ");
   for (const word of words) {
+    if (signal?.aborted) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
+    if (signal?.aborted) return;
     onChunk(word + " ");
   }
 }
 
-export default function ExperimentPage({ autonomous, proposalOutput, onComplete }) {
+export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete }) {
   const navigate = useNavigate();
-  const [output, setOutput] = useState("");
+  const [output, setOutput] = useState(experimentOutput || "");
   const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(!!experimentOutput);
+  const [error, setError] = useState("");
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setOutput(experimentOutput || "");
+    setDone(!!experimentOutput);
+  }, [experimentOutput]);
 
   async function handleRun(feedback = null) {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setOutput("");
     setDone(false);
     setRunning(true);
+    setError("");
 
     let fullOutput = "";
     await mockRunExperimentAgent(proposalOutput, feedback, (chunk) => {
+      if (signal.aborted) return;
       fullOutput += chunk;
       setOutput((prev) => prev + chunk);
-    });
+    }, signal);
 
-    onComplete(fullOutput);
+    if (!signal.aborted) {
+      onComplete(fullOutput);
+      setDone(true);
+    }
     setRunning(false);
-    setDone(true);
   }
 
   useEffect(() => {
     if (done && autonomous) {
-      const timer = setTimeout(() => {
-        navigate("/paper");
-      }, 1500);
+      const timer = setTimeout(() => navigate("/paper"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
@@ -90,7 +115,7 @@ export default function ExperimentPage({ autonomous, proposalOutput, onComplete 
             onClick={() => handleRun()}
             disabled={running}
           >
-            {running ? "Running..." : "Run Experiment Agent"}
+            {running ? "Running..." : done ? "Rerun" : "Run Experiment Agent"}
           </button>
         </div>
       )}
