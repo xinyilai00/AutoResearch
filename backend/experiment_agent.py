@@ -19,6 +19,7 @@ class ExperimentResult:
     summary: str
     dataset_name: str
     dataset_url: str
+    runner_type: str
     task_type: str
     target_column: str
     baseline: str
@@ -76,52 +77,150 @@ def extract_execution_spec(proposal: str) -> dict:
     raise ValueError("Execution spec JSON object is incomplete.")
 
 
+SUPPORTED_RUNNER_TYPES = {"universal_tabular_csv", "direct_csv", "multi_csv"}
+SUPPORTED_TASK_TYPES = {"classification", "regression", "auto"}
+SUPPORTED_METRICS = {"accuracy", "mae", "rmse", "r2"}
+
+
 def needs_redesign(spec: dict) -> str | None:
-    required = ["task_type", "dataset_url", "target_column", "success_metric"]
+    required = ["task_type", "target_column", "success_metric"]
     for key in required:
         value = spec.get(key)
         if not value or str(value).strip().upper() == "TO_VERIFY":
             return f"Execution spec field '{key}' is missing or TO_VERIFY."
 
-    dataset_url = str(spec.get("dataset_url", "")).strip()
-    if not (dataset_url.startswith("http://") or dataset_url.startswith("https://") or Path(dataset_url).exists()):
-        return "dataset_url must be a direct HTTP(S) CSV URL or an existing local file path."
+    runner_type = str(spec.get("runner_type", "universal_tabular_csv")).lower()
+    if runner_type == "needs_new_runner":
+        return "Proposal says this experiment requires a new specialized runner."
+    if runner_type not in SUPPORTED_RUNNER_TYPES:
+        return f"runner_type '{runner_type}' is not supported by the current Experiment Agent."
 
-    if dataset_url.startswith("http") and not looks_like_csv_url(dataset_url):
-        return "dataset_url must point directly to a downloadable CSV file, not a repository or webpage."
+    dataset_urls = dataset_urls_from_spec(spec)
+    if not dataset_urls:
+        return "Execution spec must provide dataset_url or dataset_urls."
+
+    for dataset_url in dataset_urls:
+        if dataset_url.upper() == "TO_VERIFY":
+            return "dataset_urls contains TO_VERIFY."
+        if not (dataset_url.startswith("http://") or dataset_url.startswith("https://") or Path(dataset_url).exists()):
+            return "Each dataset URL must be a direct HTTP(S) CSV URL or an existing local file path."
+        if dataset_url.startswith("http") and not looks_like_csv_url(dataset_url):
+            return "Each HTTP dataset URL must point directly to a downloadable CSV file, not a repository or webpage."
 
     task_type = str(spec.get("task_type", "")).lower()
-    if task_type not in {"classification", "regression"}:
-        return "task_type must be classification or regression."
+    if task_type not in SUPPORTED_TASK_TYPES:
+        return "task_type must be classification, regression, or auto."
+
+    metric_name = str(spec.get("success_metric", "")).lower()
+    if metric_name not in SUPPORTED_METRICS:
+        return f"success_metric '{metric_name}' is not supported by universal_tabular_csv."
 
     return None
 
 
 def looks_like_csv_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
-    return parsed.path.lower().endswith(".csv") or "raw.githubusercontent.com" in parsed.netloc
+    path = parsed.path.lower()
+    return path.endswith(".csv") or "raw.githubusercontent.com" in parsed.netloc or "huggingface.co" in parsed.netloc
 
 
-def load_csv(spec: dict, output_dir: Path) -> tuple[list[dict], Path]:
-    dataset_url = str(spec["dataset_url"]).strip()
+def dataset_urls_from_spec(spec: dict) -> list[str]:
+    urls = []
+    raw_urls = spec.get("dataset_urls")
+    if isinstance(raw_urls, list):
+        urls.extend(str(url).strip() for url in raw_urls if str(url).strip())
+    dataset_url = str(spec.get("dataset_url", "")).strip()
+    if dataset_url and dataset_url.upper() != "TO_VERIFY":
+        urls.insert(0, dataset_url)
+    return list(dict.fromkeys(urls))
+
+
+def load_csvs(spec: dict, output_dir: Path) -> tuple[list[dict], list[Path]]:
+    dataset_urls = dataset_urls_from_spec(spec)
     output_dir.mkdir(parents=True, exist_ok=True)
-    data_path = output_dir / "dataset.csv"
+    all_rows = []
+    data_paths = []
 
-    if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
-        with urllib.request.urlopen(dataset_url, timeout=120) as response:
-            data = response.read()
-        data_path.write_bytes(data)
-    else:
-        source_path = Path(dataset_url)
-        data_path.write_bytes(source_path.read_bytes())
+    for index, dataset_url in enumerate(dataset_urls, 1):
+        data_path = output_dir / f"dataset_{index:02d}.csv"
+        if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
+            with urllib.request.urlopen(dataset_url, timeout=120) as response:
+                data = response.read()
+            data_path.write_bytes(data)
+        else:
+            source_path = Path(dataset_url)
+            data_path.write_bytes(source_path.read_bytes())
 
-    with data_path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = [row for row in reader]
+        with data_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            rows = [dict(row, source_file=data_path.name) for row in reader]
+        all_rows.extend(rows)
+        data_paths.append(data_path)
 
-    if not rows:
+    if not all_rows:
         raise ValueError("Dataset CSV loaded but has no rows.")
-    return rows, data_path
+    return all_rows, data_paths
+
+
+def infer_target_column(rows: list[dict]) -> str:
+    if not rows:
+        raise ValueError("Cannot infer target column from an empty dataset.")
+    columns = [column for column in rows[0].keys() if column != "source_file"]
+    if not columns:
+        raise ValueError("Cannot infer target column because the CSV has no usable columns.")
+
+    preferred_names = [
+        "target",
+        "label",
+        "class",
+        "category",
+        "outcome",
+        "result",
+        "ftr",
+        "full_time_result",
+        "y",
+    ]
+    normalized_columns = {
+        re.sub(r"[^a-z0-9]+", "_", column.lower()).strip("_"): column
+        for column in columns
+    }
+    for preferred_name in preferred_names:
+        if preferred_name in normalized_columns:
+            return normalized_columns[preferred_name]
+
+    usable_columns = []
+    for column in columns:
+        values = [row.get(column, "") for row in rows[:500] if str(row.get(column, "")).strip()]
+        if values:
+            usable_columns.append((column, len(set(values))))
+    if not usable_columns:
+        raise ValueError("Cannot infer target column because all columns are empty.")
+
+    categorical_candidates = [
+        (column, unique_count)
+        for column, unique_count in usable_columns
+        if 1 < unique_count <= 50
+    ]
+    if categorical_candidates:
+        return categorical_candidates[-1][0]
+    return usable_columns[-1][0]
+
+
+def infer_task_type(rows: list[dict], target_column: str, requested_task_type: str) -> str:
+    task_type = requested_task_type.lower().strip()
+    if task_type in {"classification", "regression"}:
+        return task_type
+
+    values = [row.get(target_column, "") for row in rows[:1000] if str(row.get(target_column, "")).strip()]
+    if not values:
+        raise ValueError(f"Cannot infer task type because target column '{target_column}' has no values.")
+
+    numeric_values = [numeric_value(value) for value in values]
+    numeric_values = [value for value in numeric_values if value is not None]
+    unique_count = len(set(values))
+    if len(numeric_values) == len(values) and unique_count > 20:
+        return "regression"
+    return "classification"
 
 
 def numeric_value(value: object) -> float | None:
@@ -244,6 +343,7 @@ def write_outputs(output_dir: Path, result: ExperimentResult) -> str:
         f"- Target column: {result.target_column}",
         "",
         "## Method",
+        f"- Runner type: {result.runner_type}",
         f"- Task type: {result.task_type}",
         f"- Baseline: {result.baseline}",
         "",
@@ -272,6 +372,7 @@ def redesign_result(proposal: str, output_dir: Path, reason: str) -> str:
         summary=f"Experiment was not executed: {reason}",
         dataset_name="TO_VERIFY",
         dataset_url="TO_VERIFY",
+        runner_type="TO_VERIFY",
         task_type="TO_VERIFY",
         target_column="TO_VERIFY",
         baseline="TO_VERIFY",
@@ -279,7 +380,7 @@ def redesign_result(proposal: str, output_dir: Path, reason: str) -> str:
         results={},
         limitations=[
             "No empirical results were generated.",
-            "Proposal must provide a direct downloadable/local CSV dataset and executable task settings.",
+            "Proposal must provide an executable runner_type, direct downloadable/local CSV dataset URLs, and task settings.",
         ],
         output_files=[],
     )
@@ -312,12 +413,14 @@ def run_experiment_stage(
         return redesign_result(proposal, output_path, redesign_reason)
 
     try:
-        rows, data_path = load_csv(spec, output_path)
+        rows, data_paths = load_csvs(spec, output_path)
         target_column = str(spec["target_column"]).strip()
+        if target_column.upper() == "AUTO_TARGET":
+            target_column = infer_target_column(rows)
         if target_column not in rows[0]:
             raise ValueError(f"Target column '{target_column}' does not exist in the CSV header.")
 
-        task_type = str(spec["task_type"]).lower()
+        task_type = infer_task_type(rows, target_column, str(spec["task_type"]))
         if task_type == "classification":
             metrics, results = run_classification(rows, target_column)
         else:
@@ -333,17 +436,18 @@ def run_experiment_stage(
                 "Results are produced from the loaded dataset and baseline evaluation."
             ),
             dataset_name=str(spec.get("dataset_name", "Unknown")),
-            dataset_url=str(spec.get("dataset_url", "")),
+            dataset_url=", ".join(dataset_urls_from_spec(spec)),
+            runner_type=str(spec.get("runner_type", "universal_tabular_csv")),
             task_type=task_type,
             target_column=target_column,
             baseline=str(spec.get("baseline", "")),
             metrics=metrics,
             results=results,
             limitations=[
-                "This initial Experiment Agent supports CSV classification/regression baselines only.",
+                "The universal_tabular_csv runner supports direct/local CSV classification/regression baselines only.",
                 "More advanced models require a dedicated safe runner.",
             ],
-            output_files=[str(data_path), str(output_path / "experiment_result.json"), str(output_path / "experiment_output.md")],
+            output_files=[*(str(path) for path in data_paths), str(output_path / "experiment_result.json"), str(output_path / "experiment_output.md")],
         )
         return write_outputs(output_path, result)
     except Exception as exc:

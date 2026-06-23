@@ -324,7 +324,14 @@ def author_year_label(authors: str, year: str, title: str = "") -> str:
 def citation_lookup_from_stage_inputs(stage_inputs: str) -> dict[str, str]:
     lookup: dict[str, str] = {}
     lines = stage_inputs.splitlines()
+    citation_index = 1
     for index, line in enumerate(lines):
+        citation_match = re.match(r"^Citation:\s*\((.+)\)\s*$", line.strip(), flags=re.IGNORECASE)
+        if citation_match:
+            lookup[str(citation_index)] = citation_match.group(1).strip()
+            citation_index += 1
+            continue
+
         match = re.match(r"^\[(\d+)\]\s+(.+?)\s+\((\d{4}|n\.d\.|N/A|)\)", line.strip())
         if not match:
             continue
@@ -344,7 +351,18 @@ def citation_lookup_from_stage_inputs(stage_inputs: str) -> dict[str, str]:
 
 def replace_numeric_citation_markers(draft: str, citation_lookup: dict[str, str]) -> str:
     def replacement(match: re.Match[str]) -> str:
-        raw_numbers = re.split(r"\s*,\s*", match.group(1).strip())
+        raw_marker = match.group(1).strip()
+        if "-" in raw_marker:
+            bounds = [part.strip() for part in raw_marker.split("-", 1)]
+            if all(part.isdigit() for part in bounds):
+                start, end = int(bounds[0]), int(bounds[1])
+                labels = [
+                    citation_lookup.get(str(index), "citation TODO: author-year needed")
+                    for index in range(start, end + 1)
+                ]
+                return "(" + "; ".join(labels) + ")"
+
+        raw_numbers = re.split(r"\s*,\s*", raw_marker)
         labels = []
         for number in raw_numbers:
             label = citation_lookup.get(number)
@@ -354,7 +372,7 @@ def replace_numeric_citation_markers(draft: str, citation_lookup: dict[str, str]
                 labels.append("citation TODO: author-year needed")
         return "(" + "; ".join(labels) + ")"
 
-    return re.sub(r"\[(\d+(?:\s*,\s*\d+)*)\]", replacement, draft)
+    return re.sub(r"\[(\d+(?:\s*,\s*\d+)*|\d+\s*-\s*\d+)\]", replacement, draft)
 
 
 def normalize_paper_draft(draft: str, stage_inputs: str = "") -> str:

@@ -1,6 +1,9 @@
 from unittest import result
 
-from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+try:
+    from .config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+except ImportError:
+    from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 import requests
 import json
@@ -22,6 +25,8 @@ Your job is to:
 RULES: 
 - Do NOT generate candidate research questions. A separate Research Question Agent will do that.
 - You MUST follow the output format exactly as specified — do not summarize, do not create tables, do not write to files, do not deviate in any way
+- Cite papers using author-year format only, such as (Smith, 2023) or (Smith et al., 2023).
+- Do NOT use numeric citation markers such as [1], [22], [2,5], or [3-6].
 - DO NOT add any text before SUMMARY OF EXISTING WORK or after the last gap.
 
 OUTPUT — COPY THIS FORMAT EXACTLY, NO DEVIATIONS:
@@ -283,9 +288,28 @@ def run_all_searches(parsed: dict) -> list[dict]:
 # FORMAT PAPERS FOR LLM
 # ─────────────────────────────────────────────
 
+def author_year_label(paper: dict) -> str:
+    authors = paper.get("authors") or []
+    year = str(paper.get("year") or "n.d.").strip() or "n.d."
+    title = str(paper.get("title") or "Unknown").strip()
+
+    if not authors:
+        lead = " ".join(title.split()[:3]) or "Unknown"
+        return f"{lead}, {year}"
+
+    first_author = str(authors[0]).strip()
+    first_surname = first_author.split()[-1] if first_author.split() else first_author
+    if len(authors) == 1:
+        return f"{first_surname}, {year}"
+    if len(authors) == 2:
+        second_author = str(authors[1]).strip()
+        second_surname = second_author.split()[-1] if second_author.split() else second_author
+        return f"{first_surname} & {second_surname}, {year}"
+    return f"{first_surname} et al., {year}"
+
+
 def format_papers_for_llm(papers: list[dict], max_papers: int = 30) -> str:
-    """Format paper list into a prompt-friendly string. Cap to avoid token overflow."""
-    # Prioritise papers with abstracts and high citations
+    """Format paper list without numeric citation labels."""
     papers_sorted = sorted(
         papers,
         key=lambda p: (p.get("citations") or 0),
@@ -293,13 +317,49 @@ def format_papers_for_llm(papers: list[dict], max_papers: int = 30) -> str:
     )[:max_papers]
 
     lines = []
-    for i, p in enumerate(papers_sorted, 1):
+    for p in papers_sorted:
+        citation_key = author_year_label(p)
         lines.append(
-            f"[{i}] {p['title']} ({p['year']}) — {p['source']}\n"
+            f"Citation: ({citation_key})\n"
+            f"Title: {p['title']} ({p['year']}) — {p['source']}\n"
             f"Authors: {', '.join(p['authors']) if p['authors'] else 'N/A'}\n"
             f"Abstract: {p['abstract'][:400]}...\n"
         )
     return "\n".join(lines)
+
+
+def citation_lookup_from_papers_text(papers_text: str) -> dict[str, str]:
+    lookup = {}
+    citation_index = 1
+    for line in papers_text.splitlines():
+        match = re.match(r"^Citation:\s*\((.+)\)\s*$", line.strip())
+        if match:
+            lookup[str(citation_index)] = match.group(1).strip()
+            citation_index += 1
+    return lookup
+
+
+def replace_numeric_citation_markers(text: str, citation_lookup: dict[str, str]) -> str:
+    def replacement(match: re.Match) -> str:
+        raw_marker = match.group(1).strip()
+        if "-" in raw_marker:
+            bounds = [part.strip() for part in raw_marker.split("-", 1)]
+            if all(part.isdigit() for part in bounds):
+                start, end = int(bounds[0]), int(bounds[1])
+                labels = [
+                    citation_lookup.get(str(index), "citation TODO: author-year needed")
+                    for index in range(start, end + 1)
+                ]
+                return "(" + "; ".join(labels) + ")"
+
+        labels = [
+            citation_lookup.get(number.strip(), "citation TODO: author-year needed")
+            for number in raw_marker.split(",")
+            if number.strip()
+        ]
+        return "(" + "; ".join(labels) + ")"
+
+    return re.sub(r"\[(\d+(?:\s*,\s*\d+)*|\d+\s*-\s*\d+)\]", replacement, text)
 
 # ─────────────────────────────────────────────
 # DIANJIN API CALLS
@@ -373,7 +433,8 @@ def run_literature_agent(papers_text: str, topic: str) -> str:
     data = response.json()
     request_id = data["data"]["requestId"]
     print("Got requestId:", request_id)
-    return get_response(request_id)
+    result = get_response(request_id)
+    return replace_numeric_citation_markers(result, citation_lookup_from_papers_text(papers_text))
 
 # ─────────────────────────────────────────────
 # MAIN
