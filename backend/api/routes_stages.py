@@ -155,28 +155,17 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
     topic = request.topic or state.get_metadata("topic") or "AutoResearch paper"
     paper_seed = request.paper
     args_list = [
-        "--prompt",
-        topic,
-        "--pi-output",
-        str(state.active_path("pi") or ""),
-        "--part1-literature",
-        str(state.active_path("literature") or ""),
-        "--research-questions",
-        str(state.active_path("research_questions") or ""),
-        "--research-question",
-        str(state.active_path("research_question") or ""),
-        "--deep-literature",
-        str(state.active_path("deep_literature") or ""),
-        "--proposal",
-        str(state.active_path("proposal") or ""),
-        "--experiment",
-        str(state.active_path("experiment") or ""),
-        "--out",
-        str(state.run_dir),
-        "--iterations",
-        "0",
-        "--max-tokens",
-        "14000",
+        "--prompt", topic,
+        "--pi-output", str(state.active_path("pi") or ""),
+        "--part1-literature", str(state.active_path("literature") or ""),
+        "--research-questions", str(state.active_path("research_questions") or ""),
+        "--research-question", str(state.active_path("research_question") or ""),
+        "--deep-literature", str(state.active_path("deep_literature") or ""),
+        "--proposal", str(state.active_path("proposal") or ""),
+        "--experiment", str(state.active_path("experiment") or ""),
+        "--out", str(state.run_dir),
+        "--iterations", "0",
+        "--max-tokens", "14000",
     ]
     if paper_seed:
         args_list.extend(["--paper", paper_seed])
@@ -184,7 +173,13 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
     output_dir = run_paper_agent(parse_paper_args(args_list))
     final_path = output_dir / "final.md"
     state.set_stage_status("paper", "generated")
-    return final_path
+
+    # ── Chain review immediately after paper ──
+    review_dir = run_review_from_file(final_path, state.run_dir / "review", rounds=1)
+    state.set_stage_status("review", "generated")
+    reviewed_path = review_dir / "reviewed_draft.md"
+
+    return reviewed_path
 
 
 def run_review_stage(request: StageRunRequest, state: PipelineState) -> Path:

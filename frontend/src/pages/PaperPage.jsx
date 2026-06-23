@@ -2,42 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunPaperAgent(experimentOutput, feedback, onChunk, signal) {
-  const fakeOutput = `# Predicting Athletic Performance Decrements Using Multivariate Wearable Sensor Data
-
-## Abstract
-This study investigates whether combining HRV, sleep, and activity metrics improves next-day athletic performance prediction over single-metric baselines.
-
-## Introduction
-Wearable sensors have enabled continuous monitoring of athlete physiological states, yet individual-level prediction remains underexplored.
-
-## Review
-Existing literature shows multivariate models outperform single-metric approaches by 12-18%, though within-subject evaluation is rarely applied.
-
-## Methodology
-A leave-one-athlete-out cross-validation was applied to the PMDATA dataset across four LSTM model configurations.
-
-## Results
-The multivariate LSTM achieved AUC 0.83, significantly outperforming all single-metric baselines (p < 0.01).
-
-## Discussion
-Results confirm the hypothesis and suggest sleep quality is the strongest individual predictor when combined with HRV metrics.
-
-## Conclusion
-Multivariate wearable models can reliably predict next-day performance decrements at the individual athlete level.
-
-## References
-TODO: Add verified citations from the Citations stage.
-${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
-
-  const words = fakeOutput.split(" ");
-  for (const word of words) {
-    if (signal?.aborted) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    if (signal?.aborted) return;
-    onChunk(word + " ");
-  }
-}
+const PHASE_LABELS = ["Drafting paper...", "Polishing paper..."];
+const PHASE_DURATION_MS = 300000; // Switch label after 30s estimate
 
 export default function PaperPage({ autonomous, experimentOutput, paperOutput, onComplete }) {
   const navigate = useNavigate();
@@ -45,58 +11,67 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!paperOutput);
   const [error, setError] = useState("");
-  const abortControllerRef = useRef(null);
-
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  const phaseTimerRef = useRef(null);
 
   useEffect(() => {
     setOutput(paperOutput || "");
     setDone(!!paperOutput);
   }, [paperOutput]);
 
-  async function handleRun(feedback = null) {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    setOutput("");
-    setDone(false);
-    setRunning(true);
-    setError("");
-
-    let fullOutput = "";
-    await mockRunPaperAgent(experimentOutput, feedback, (chunk) => {
-      if (signal.aborted) return;
-      fullOutput += chunk;
-      setOutput((prev) => prev + chunk);
-    }, signal);
-
-    if (!signal.aborted) {
-      onComplete(fullOutput);
-      setDone(true);
-    }
-    setRunning(false);
-  }
-
   useEffect(() => {
     if (done && autonomous) {
-      const timer = setTimeout(() => navigate("/review"), 1500);
+      const timer = setTimeout(() => navigate("/rebuttal"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
 
+  useEffect(() => {
+    return () => {
+      if (phaseTimerRef.current) clearTimeout(phaseTimerRef.current);
+    };
+  }, []);
+
+  async function handleRun(feedback = null) {
+    setOutput("");
+    setDone(false);
+    setRunning(true);
+    setError("");
+    setPhaseIndex(0);
+
+    // Switch spinner label to phase 2 after PHASE_DURATION_MS
+    phaseTimerRef.current = setTimeout(() => setPhaseIndex(1), PHASE_DURATION_MS);
+
+    try {
+      const res = await fetch("http://localhost:8000/api/stages/paper/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedback: feedback || undefined }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Paper stage failed");
+      }
+
+      const data = await res.json();
+      const text = data.output || "";
+      setOutput(text);
+      onComplete(text);
+      setDone(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      clearTimeout(phaseTimerRef.current);
+      setRunning(false);
+      setPhaseIndex(0);
+    }
+  }
+
   return (
     <div className="stage-page">
       <h1>Paper Agent</h1>
-      <p>Writes a full academic research paper based on all previous stage outputs.</p>
+      <p>Writes and polishes a full academic research paper based on all previous stage outputs.</p>
 
       {!experimentOutput && (
         <div className="warning-box">
@@ -111,10 +86,12 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
             onClick={() => handleRun()}
             disabled={running}
           >
-            {running ? "Running..." : done ? "Rerun" : "Run Paper Agent"}
+            {running ? PHASE_LABELS[phaseIndex] : done ? "Rerun" : "Run Paper Agent"}
           </button>
         </div>
       )}
+
+      {error && <div className="error-box">{error}</div>}
 
       {output && (
         <div className="output-box">
@@ -125,8 +102,8 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
       {done && !autonomous && (
         <>
           <FeedbackBar onRerun={(feedback) => handleRun(feedback)} disabled={running} />
-          <button className="start-button" style={{ marginTop: "16px" }} onClick={() => navigate("/review")}>
-            Continue to Review →
+          <button className="start-button" style={{ marginTop: "16px" }} onClick={() => navigate("/rebuttal")}>
+            Continue to Rebuttal →
           </button>
         </>
       )}

@@ -2,47 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunExperimentAgent(proposalOutput, feedback, onChunk, signal) {
-  const fakeOutput = `EXPERIMENT EXECUTION SUMMARY:
-The experiment was conducted using the PMDATA dataset containing 16 athletes monitored over 5 months. All data preprocessing, model training, and evaluation were completed using Python with scikit-learn and TensorFlow libraries.
-
-DATA PREPROCESSING:
-- Raw wearable sensor data cleaned and normalized using z-score standardization
-- Missing values imputed using forward-fill method (< 3% of total data)
-- Feature extraction produced 12 HRV metrics, 4 sleep quality scores, and 6 activity metrics
-- Final dataset: 2,847 athlete-day samples across 16 athletes
-
-MODEL TRAINING:
-- All four models trained using leave-one-athlete-out cross-validation (16 folds)
-- LSTM models trained for 100 epochs with early stopping (patience=10)
-- Random Forest trained with 500 estimators and max depth of 10
-- Training completed in approximately 4.2 hours on standard CPU hardware
-
-RESULTS:
-- HRV-only LSTM: AUC 0.71, F1 0.68
-- Sleep-only LSTM: AUC 0.69, F1 0.65
-- Activity-only LSTM: AUC 0.64, F1 0.61
-- Multivariate LSTM: AUC 0.83, F1 0.79
-
-STATISTICAL ANALYSIS:
-- Multivariate LSTM significantly outperforms all single-metric baselines (p < 0.01)
-- Results replicated across 14 of 16 athletes
-- Effect size (Cohen's d) = 0.82, indicating large practical significance
-
-ERRORS AND EDGE CASES:
-- 2 athletes showed anomalous patterns — flagged for exclusion in sensitivity analysis
-- Class imbalance addressed successfully using SMOTE (minority class ratio improved from 0.23 to 0.45)
-${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
-
-  const words = fakeOutput.split(" ");
-  for (const word of words) {
-    if (signal?.aborted) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    if (signal?.aborted) return;
-    onChunk(word + " ");
-  }
-}
-
 export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete }) {
   const navigate = useNavigate();
   const [output, setOutput] = useState(experimentOutput || "");
@@ -53,9 +12,7 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
 
   useEffect(() => {
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, []);
 
@@ -64,38 +21,45 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
     setDone(!!experimentOutput);
   }, [experimentOutput]);
 
-  async function handleRun(feedback = null) {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    setOutput("");
-    setDone(false);
-    setRunning(true);
-    setError("");
-
-    let fullOutput = "";
-    await mockRunExperimentAgent(proposalOutput, feedback, (chunk) => {
-      if (signal.aborted) return;
-      fullOutput += chunk;
-      setOutput((prev) => prev + chunk);
-    }, signal);
-
-    if (!signal.aborted) {
-      onComplete(fullOutput);
-      setDone(true);
-    }
-    setRunning(false);
-  }
-
   useEffect(() => {
     if (done && autonomous) {
       const timer = setTimeout(() => navigate("/paper"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
+
+  async function handleRun(feedback = null) {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+
+    setOutput("");
+    setDone(false);
+    setRunning(true);
+    setError("");
+
+    try {
+      const res = await fetch("http://localhost:8000/api/stages/experiment/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedback: feedback || undefined }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.status === "redesign_needed") {
+        throw new Error(data.detail || data.output || "Experiment stage failed.");
+      }
+
+      setOutput(data.output || "");
+      onComplete(data.output || "");
+      setDone(true);
+    } catch (e) {
+      if (e.name !== "AbortError") setError(e.message);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   return (
     <div className="stage-page">
@@ -110,15 +74,13 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
 
       {proposalOutput && (
         <div className="input-row">
-          <button
-            className="run-button"
-            onClick={() => handleRun()}
-            disabled={running}
-          >
-            {running ? "Running..." : done ? "Rerun" : "Run Experiment Agent"}
+          <button className="run-button" onClick={() => handleRun()} disabled={running}>
+            {running ? "Running experiment..." : done ? "Rerun" : "Run Experiment Agent"}
           </button>
         </div>
       )}
+
+      {error && <div className="error-box">{error}</div>}
 
       {output && (
         <div className="output-box">

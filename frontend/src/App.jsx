@@ -8,7 +8,6 @@ import DeepLiteraturePage from "./pages/DeepLiteraturePage.jsx";
 import ProposalPage from "./pages/ProposalPage.jsx";
 import ExperimentPage from "./pages/ExperimentPage.jsx";
 import PaperPage from "./pages/PaperPage.jsx";
-import ReviewPage from "./pages/ReviewPage.jsx";
 import RebuttalPage from "./pages/RebuttalPage.jsx";
 import CitationsPage from "./pages/CitationsPage.jsx";
 import FilesPage from "./pages/FilesPage.jsx";
@@ -23,7 +22,6 @@ const stages = [
   { label: "Proposal", path: "/proposal" },
   { label: "Experiment", path: "/experiment" },
   { label: "Paper", path: "/paper" },
-  { label: "Review", path: "/review" },
   { label: "Rebuttal", path: "/rebuttal" },
   { label: "Citations", path: "/citations" },
   { label: "Files", path: "/files" },
@@ -64,7 +62,6 @@ function Layout({ children }) {
 
 function App() {
   const [autonomous, setAutonomous] = useState(false);
-
   const [topic, setTopic] = useState("");
   const [litOutput, setLitOutput] = useState("");
   const [questions, setQuestions] = useState([]);
@@ -73,7 +70,6 @@ function App() {
   const [proposalOutput, setProposalOutput] = useState("");
   const [experimentOutput, setExperimentOutput] = useState("");
   const [paperOutput, setPaperOutput] = useState("");
-  const [reviewOutput, setReviewOutput] = useState("");
 
   function completeLitOutput(output) {
     setLitOutput(output);
@@ -83,7 +79,6 @@ function App() {
     setProposalOutput("");
     setExperimentOutput("");
     setPaperOutput("");
-    setReviewOutput("");
   }
 
   function completeSelectedQuestion(question) {
@@ -92,7 +87,6 @@ function App() {
     setProposalOutput("");
     setExperimentOutput("");
     setPaperOutput("");
-    setReviewOutput("");
   }
 
   function completeDeepLitOutput(output) {
@@ -100,25 +94,17 @@ function App() {
     setProposalOutput("");
     setExperimentOutput("");
     setPaperOutput("");
-    setReviewOutput("");
   }
 
   function completeProposalOutput(output) {
     setProposalOutput(output);
     setExperimentOutput("");
     setPaperOutput("");
-    setReviewOutput("");
   }
 
   function completeExperimentOutput(output) {
     setExperimentOutput(output);
     setPaperOutput("");
-    setReviewOutput("");
-  }
-
-  function completePaperOutput(output) {
-    setPaperOutput(output);
-    setReviewOutput("");
   }
 
   return (
@@ -175,18 +161,10 @@ function App() {
               autonomous={autonomous}
               experimentOutput={experimentOutput}
               paperOutput={paperOutput}
-              onComplete={completePaperOutput}
+              onComplete={setPaperOutput}
             />}
           />
-          <Route path="/review" element={
-            <ReviewPage
-              autonomous={autonomous}
-              paperOutput={paperOutput}
-              reviewOutput={reviewOutput}
-              onComplete={setReviewOutput}
-            />}
-          />
-          <Route path="/rebuttal" element={<RebuttalPage autonomous={autonomous} reviewOutput={reviewOutput} />} />
+          <Route path="/rebuttal" element={<RebuttalPage autonomous={autonomous} paperOutput={paperOutput} />} />
           <Route path="/citations" element={<CitationsPage autonomous={autonomous} />} />
           <Route path="/files" element={<FilesPage autonomous={autonomous} />} />
           <Route path="/submission" element={<SubmissionPage autonomous={autonomous} />} />
