@@ -1,67 +1,68 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunDeepLiteratureAgent(selectedQuestion, feedback, onChunk) {
-  const fakeOutput = `RELEVANT METHODOLOGIES:
-- LSTM Networks: Used for time-series data prediction with ~78% accuracy in prior fatigue classification studies. Particularly effective for sequential sensor data.
-- Random Forest: Applied for feature importance ranking across HRV, sleep, and activity metrics. Computationally lightweight and interpretable.
-- Transformer-based models: Recently applied to wearable time-series with promising results but high computational cost.
-- Support Vector Machines: Used as baseline classifiers in several benchmark studies with moderate performance.
-
-RELEVANT DATASETS:
-- PMDATA: Publicly available dataset of 16 athletes over 5 months with daily wellness scores and wearable sensor data. Most directly relevant to this question.
-- LifeSnaps: Fitbit data combined with self-reported wellness metrics across general population. Useful for transfer learning.
-- WESAD: Wearable stress and affect detection dataset. Relevant for physiological signal processing methods.
-
-PRIOR QUANTITATIVE RESULTS:
-- HRV alone predicts next-day readiness with AUC 0.71 in prior studies
-- Multivariate models combining sleep + HRV + activity outperform single-metric models by 12-18%
-- LSTM models achieve F1 score of 0.74 on fatigue classification tasks
-- Random Forest feature importance consistently ranks sleep quality as the top predictor
-
-WHAT THIS QUESTION STILL NEEDS:
-Individual-level prediction versus group-level prediction has not been rigorously tested in the literature. Most existing studies aggregate data across athletes, masking significant within-person variability that is critical for personalized performance monitoring.
-
-A new study must apply within-subject cross-validation or leave-one-out methodology to properly evaluate individual-level prediction accuracy. Current benchmarks are not directly comparable due to inconsistent evaluation protocols across studies.
-
-Furthermore, the combination of multiple wearable modalities in a unified model has not been systematically compared against single-modality approaches using the same dataset and evaluation framework.
-${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
-
-  const words = fakeOutput.split(" ");
-  for (const word of words) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    onChunk(word + " ");
-  }
-}
-
-export default function DeepLiteraturePage({ autonomous, selectedQuestion, onComplete }) {
+export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepLitOutput, onComplete }) {
   const navigate = useNavigate();
-  const [output, setOutput] = useState("");
+  const [output, setOutput] = useState(deepLitOutput || "");
   const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(!!deepLitOutput);
+  const [error, setError] = useState("");
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setOutput(deepLitOutput || "");
+    setDone(!!deepLitOutput);
+  }, [deepLitOutput]);
 
   async function handleRun(feedback = null) {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setOutput("");
     setDone(false);
     setRunning(true);
+    setError("");
 
-    let fullOutput = "";
-    await mockRunDeepLiteratureAgent(selectedQuestion, feedback, (chunk) => {
-      fullOutput += chunk;
-      setOutput((prev) => prev + chunk);
-    });
+    try {
+      const response = await fetch("http://localhost:8000/api/stages/deep_literature/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ research_question: selectedQuestion, feedback: feedback }),
+        signal: signal
+      });
 
-    onComplete(fullOutput);
-    setRunning(false);
-    setDone(true);
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      const data = await response.json();
+      const fullOutput = data.output || "";
+      setOutput(fullOutput);
+      onComplete(fullOutput);
+      setDone(true);
+    } catch (err) {
+      if (err.name === "AbortError") {
+        setRunning(false);
+        return;
+      }
+      setError(`Something went wrong: ${err.message}`);
+    } finally {
+      setRunning(false);
+    }
   }
 
   useEffect(() => {
     if (done && autonomous) {
-      const timer = setTimeout(() => {
-        navigate("/proposal");
-      }, 1500);
+      const timer = setTimeout(() => navigate("/proposal"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
@@ -82,18 +83,26 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, onCom
           <div className="selected-preview" style={{ marginBottom: "20px" }}>
             <strong>Research Question:</strong> {selectedQuestion}
           </div>
-
           <div className="input-row">
             <button
               className="run-button"
               onClick={() => handleRun()}
               disabled={running}
             >
-              {running ? "Running..." : "Run Literature Review"}
+              {running ? "Running..." : done ? "Rerun" : "Run Literature Review"}
             </button>
           </div>
         </>
       )}
+
+      {running && (
+        <div className="status-indicator">
+          <div className="spinner"></div>
+          <p>Running targeted literature review...</p>
+        </div>
+      )}
+
+      {error && <div className="warning-box">{error}</div>}
 
       {output && (
         <div className="output-box">

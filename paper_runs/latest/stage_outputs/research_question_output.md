@@ -1,0 +1,1 @@
+To what extent can computational harmonic analysis—extracting features such as chromatic mediant frequency, modal mixture density, tonal pairing instances, and modulation distance—quantitatively differentiate early Beethoven piano sonatas (Opp. 2–28) from late sonatas (Opp. 101–111), and which harmonic features contribute most to period classification?

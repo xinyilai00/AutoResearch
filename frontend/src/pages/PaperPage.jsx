@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-async function mockRunPaperAgent(experimentOutput, feedback, onChunk) {
+async function mockRunPaperAgent(experimentOutput, feedback, onChunk, signal) {
   const fakeOutput = `# Predicting Athletic Performance Decrements Using Multivariate Wearable Sensor Data
 
 ## Abstract
@@ -32,38 +32,63 @@ ${feedback ? `\n\nRefined based on feedback: "${feedback}"` : ""}`;
 
   const words = fakeOutput.split(" ");
   for (const word of words) {
+    if (signal?.aborted) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
+    if (signal?.aborted) return;
     onChunk(word + " ");
   }
 }
 
-export default function PaperPage({ autonomous, experimentOutput, onComplete }) {
+export default function PaperPage({ autonomous, experimentOutput, paperOutput, onComplete }) {
   const navigate = useNavigate();
-  const [output, setOutput] = useState("");
+  const [output, setOutput] = useState(paperOutput || "");
   const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(!!paperOutput);
+  const [error, setError] = useState("");
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setOutput(paperOutput || "");
+    setDone(!!paperOutput);
+  }, [paperOutput]);
 
   async function handleRun(feedback = null) {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setOutput("");
     setDone(false);
     setRunning(true);
+    setError("");
 
     let fullOutput = "";
     await mockRunPaperAgent(experimentOutput, feedback, (chunk) => {
+      if (signal.aborted) return;
       fullOutput += chunk;
       setOutput((prev) => prev + chunk);
-    });
+    }, signal);
 
-    onComplete(fullOutput);
+    if (!signal.aborted) {
+      onComplete(fullOutput);
+      setDone(true);
+    }
     setRunning(false);
-    setDone(true);
   }
 
   useEffect(() => {
     if (done && autonomous) {
-      const timer = setTimeout(() => {
-        navigate("/review");
-      }, 1500);
+      const timer = setTimeout(() => navigate("/review"), 1500);
       return () => clearTimeout(timer);
     }
   }, [done, autonomous]);
@@ -86,7 +111,7 @@ export default function PaperPage({ autonomous, experimentOutput, onComplete }) 
             onClick={() => handleRun()}
             disabled={running}
           >
-            {running ? "Running..." : "Run Paper Agent"}
+            {running ? "Running..." : done ? "Rerun" : "Run Paper Agent"}
           </button>
         </div>
       )}

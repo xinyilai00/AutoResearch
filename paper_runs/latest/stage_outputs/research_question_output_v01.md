@@ -1,0 +1,1 @@
+How do acoustic profiles of classical music sub-genres (Baroque, Classical period, Romantic, contemporary minimalism) differ along dimensions hypothesized to influence arousal regulation and cognitive engagement in dementia populations, and can a computational taxonomy of therapeutic suitability be constructed?
