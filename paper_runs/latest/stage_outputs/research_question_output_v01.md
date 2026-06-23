@@ -1,0 +1,1 @@
+Can Transformer-based architectures (e.g., Informer, Autoformer, PatchTST) outperform LSTM and CNN-LSTM baselines in multi-horizon stock price forecasting when trained on publicly available OHLCV data from major indices?

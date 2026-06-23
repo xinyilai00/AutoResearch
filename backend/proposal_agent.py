@@ -153,7 +153,7 @@ def search_public_datasets(query: str, limit: int = 5) -> list[dict]:
     sources = []
     sources.extend(search_github_public_datasets(query, limit=limit))
     sources.extend(search_huggingface_datasets(query, limit=limit))
-    sources.extend(search_uci_datasets(query, limit=limit))
+    #sources.extend(search_uci_datasets(query, limit=limit))
     return sources
 
 
