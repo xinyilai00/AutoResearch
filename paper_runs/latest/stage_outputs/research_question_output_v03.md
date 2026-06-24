@@ -1,1 +1,0 @@
-Compared to other globally prominent footballers (e.g., Messi, Mbappé, Haaland), does Ronaldo's social media presence generate a disproportionately higher volume of training emulation language, career aspiration references, and body comparison commentary among young users, and what content features account for any observed differential influence?

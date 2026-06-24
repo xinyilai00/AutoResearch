@@ -1,1 +1,0 @@
-Did Messi's 2022 FIFA World Cup victory produce a measurable increase in youth football registration rates across Argentina, as evidenced by publicly available enrollment data from the Argentine Football Association (AFA), provincial sports ministries, and municipal youth leagues?
