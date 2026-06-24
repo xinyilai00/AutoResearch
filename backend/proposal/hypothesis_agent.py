@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 
 try:
-    from .agent_api import call_agent_api
-    from .config import HYPOTHESIS_PRINCIPAL_ID
+    from ..agent_api import call_agent_api
+    from ..config import HYPOTHESIS_PRINCIPAL_ID
 except ImportError:
     from agent_api import call_agent_api
     from config import HYPOTHESIS_PRINCIPAL_ID

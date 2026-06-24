@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 try:
-    from . import experiment_agent
+    from .. import experiment_agent
 except ImportError:
     import experiment_agent
 
