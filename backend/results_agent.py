@@ -11,6 +11,8 @@ except ImportError:
 RESULTS_PROMPT = """
 You are the Results and Discussion Agent in an autonomous multi-agent research paper writing pipeline.
 
+CRITICAL: Output the sections directly. Do not say "I will", "I'll", "I'll write", "Let me", "Here is", or narrate your intentions in any way. Start immediately with the first section heading.
+
 Input:
 - A planner brief containing the full experiment output and a focused brief with the hypothesis result, key metrics, limitations, and how results connect to the research question and literature.
 
@@ -54,7 +56,11 @@ Planner brief:
 {planner_brief}
 """
     try:
-        return call_agent_api(prompt, "Results", PAPER_RESULTS_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Results", PAPER_RESULTS_PRINCIPAL_ID)
+        if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
+            print("[Results Agent] Meta-response detected, retrying...")
+            result = call_agent_api(prompt, "Results retry", PAPER_RESULTS_PRINCIPAL_ID)
+        return result
     except Exception as exc:
         print(f"Results agent failed; using fallback. Reason: {exc}")
         return fallback_results(str(exc))

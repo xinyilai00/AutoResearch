@@ -9,7 +9,24 @@ except ImportError:
 
 
 LITREVIEW_PROMPT = """
-You are the Literature Review Agent in an autonomous multi-agent research paper writing pipeline.
+You are starting a completely fresh task. Ignore any previous context or conversations.
+
+You are the Paper Section Writer (Literature Review) in an autonomous multi-agent research paper writing pipeline.
+
+CRITICAL: 
+- Output the literature review section as PLAIN TEXT directly in this response.
+- Do NOT write to any files.
+- Do NOT use any tools.
+- Do NOT save to any workspace or directory.
+- Do NOT summarize what you wrote.
+- Do NOT say the file has been delivered.
+- Your entire response must be the literature review text itself, starting with ## Literature Review.
+
+You will receive raw research notes and source material from upstream research stages. These are NOT a completed paper section — they are reference material only.
+
+Your job is to use this material to write the Literature Review SECTION of an academic research paper. This is different from the upstream literature research that was conducted — you are writing the final paper section that will appear in the published paper.
+
+Start immediately with ## Literature Review and write the full section in academic prose.
 
 Input:
 - A planner brief containing the full deep literature review and a focused brief with the angle, key themes, research gap, and tone.
@@ -31,6 +48,14 @@ Output exactly in this format:
 """
 
 
+META_STARTS = (
+    "i'll", "i will", "here is", "let me", "i'll write",
+    "the literature review has", "i have already", "i've already",
+    "the literature review was", "this has already been",
+    "the literature review section", "i have written",
+)
+
+
 def fallback_litreview(reason: str) -> str:
     return f"""## Literature Review
 Literature review generation is pending. The Literature Review Agent was unavailable. Reason: {reason}
@@ -45,7 +70,14 @@ Planner brief:
 {planner_brief}
 """
     try:
-        return call_agent_api(prompt, "Lit Review", PAPER_LITREVIEW_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Lit Review", PAPER_LITREVIEW_PRINCIPAL_ID)
+        if result.strip().lower().startswith(META_STARTS):
+            print("[Lit Review Agent] Meta-response detected, retrying...")
+            result = call_agent_api(prompt, "Lit Review retry", PAPER_LITREVIEW_PRINCIPAL_ID)
+        if result.strip().lower().startswith(META_STARTS):
+            print("[Lit Review Agent] Meta-response on retry, using fallback.")
+            return fallback_litreview("Meta-response detected twice.")
+        return result
     except Exception as exc:
         print(f"Lit Review agent failed; using fallback. Reason: {exc}")
         return fallback_litreview(str(exc))

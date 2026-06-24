@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
+import concurrent.futures
 import json
 import os
 import re
 import textwrap
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -140,6 +139,7 @@ def looks_like_meta_response(text: str) -> bool:
         "here is",
         "i can",
         "let me",
+        "it looks like",
         "the research paper has been completed",
         "the paper has been completed",
         "the manuscript has been completed",
@@ -271,18 +271,6 @@ def read_source(args: argparse.Namespace) -> tuple[str, dict[str, str]]:
     return "\n\n".join(pieces), collect_stage_inputs(args)
 
 
-async def run_inner_agents(planner_briefs: dict[str, str]) -> tuple[str, str, str, str, str]:
-    print("[Paper Agent] Running inner agents in parallel...")
-    intro, litreview, methodology, results, conclusion = await asyncio.gather(
-        asyncio.to_thread(run_intro_agent, planner_briefs["intro"]),
-        asyncio.to_thread(run_litreview_agent, planner_briefs["litreview"]),
-        asyncio.to_thread(run_methodology_agent, planner_briefs["methodology"]),
-        asyncio.to_thread(run_results_agent, planner_briefs["results"]),
-        asyncio.to_thread(run_conclusion_agent, planner_briefs["conclusion"]),
-    )
-    return intro, litreview, methodology, results, conclusion
-
-
 def run_agent(args: argparse.Namespace) -> Path:
     source, stage_inputs = read_source(args)
     output_dir = Path(args.out).resolve()
@@ -303,8 +291,11 @@ def run_agent(args: argparse.Namespace) -> Path:
         experiment=stage_inputs.get("experiment", ""),
     )
 
-   # Step 2: Inner agents in parallel
-    import concurrent.futures
+    # DEBUG: save planner output
+    write(output_dir / "planner_output.json", json.dumps(planner_briefs, indent=2))
+
+    # Step 2: Inner agents in parallel
+    print("[Paper Agent] Running inner agents in parallel...")
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = {
             "intro": executor.submit(run_intro_agent, planner_briefs["intro"]),
@@ -319,7 +310,7 @@ def run_agent(args: argparse.Namespace) -> Path:
         results = futures["results"].result()
         conclusion = futures["conclusion"].result()
 
-    # Save individual section outputs
+    # Save individual section outputs for debugging
     paper_sections_dir = output_dir / "paper_sections"
     write(paper_sections_dir / "intro.md", intro)
     write(paper_sections_dir / "litreview.md", litreview)

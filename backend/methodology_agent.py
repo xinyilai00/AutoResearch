@@ -11,6 +11,8 @@ except ImportError:
 METHODOLOGY_PROMPT = """
 You are the Methodology Agent in an autonomous multi-agent research paper writing pipeline.
 
+CRITICAL: Output the sections directly. Do not say "I will", "I'll", "I'll write", "Let me", "Here is", or narrate your intentions in any way. Start immediately with the first section heading.
+
 Input:
 - A planner brief containing the full proposal output and a focused brief with the research question, hypothesis, key design decisions, and how the methodology connects to the results.
 
@@ -45,7 +47,11 @@ Planner brief:
 {planner_brief}
 """
     try:
-        return call_agent_api(prompt, "Methodology", PAPER_METHODOLOGY_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Methodology", PAPER_METHODOLOGY_PRINCIPAL_ID)
+        if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
+            print("[Methodology Agent] Meta-response detected, retrying...")
+            result = call_agent_api(prompt, "Methodology retry", PAPER_METHODOLOGY_PRINCIPAL_ID)
+        return result
     except Exception as exc:
         print(f"Methodology agent failed; using fallback. Reason: {exc}")
         return fallback_methodology(str(exc))
