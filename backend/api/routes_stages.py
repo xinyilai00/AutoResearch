@@ -174,12 +174,7 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
     final_path = output_dir / "final.md"
     state.set_stage_status("paper", "generated")
 
-    # ── Chain review immediately after paper ──
-    review_dir = run_review_from_file(final_path, state.run_dir / "review", rounds=1)
-    state.set_stage_status("review", "generated")
-    reviewed_path = review_dir / "reviewed_draft.md"
-
-    return reviewed_path
+    return final_path
 
 
 def run_review_stage(request: StageRunRequest, state: PipelineState) -> Path:

@@ -11,6 +11,7 @@ except ImportError:
 CONCLUSION_PROMPT = """
 You are the Conclusion Agent in an autonomous multi-agent research paper writing pipeline.
 
+CRITICAL: Output the complete assembled paper directly. Do not say "I will", "I'll", "Let me", "Here is", or narrate your intentions in any way. Start immediately with the paper title as a Markdown H1 heading.
 Input:
 - A planner brief containing the full proposal output, full experiment output, and a focused brief with the research question, hypothesis result, key findings, contributions, limitations, and suggested future work.
 
@@ -46,7 +47,11 @@ Planner brief:
 {planner_brief}
 """
     try:
-        return call_agent_api(prompt, "Conclusion", PAPER_CONCLUSION_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Conclusion", PAPER_CONCLUSION_PRINCIPAL_ID)
+        if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
+            print("[Conclusion Agent] Meta-response detected, retrying...")
+            result = call_agent_api(prompt, "Conclusion retry", PAPER_CONCLUSION_PRINCIPAL_ID)
+        return result
     except Exception as exc:
         print(f"Conclusion agent failed; using fallback. Reason: {exc}")
         return fallback_conclusion(str(exc))

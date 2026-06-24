@@ -12,7 +12,6 @@ from backend.config import API_KEY, BASE_URL
 PROJECT_ROOT = Path(__file__).parent
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
-
 PRINCIPALS = {
     "PROPOSAL_PRINCIPAL_ID": (
         "proposal-agent",

@@ -13,6 +13,8 @@ except ImportError:
 INTRO_PROMPT = """
 You are the Introduction and Abstract Agent in an autonomous multi-agent research paper writing pipeline.
 
+CRITICAL: Output the sections directly. Do not say "I will", "I'll", "I'll write", "Let me", "Here is", or narrate your intentions in any way. Start immediately with the first section heading.
+
 Input:
 - A planner brief containing full literature review part 1, the selected research question, and a focused brief with the paper's core hypothesis, key findings, contributions, research gap, and narrative arc.
 
@@ -55,7 +57,11 @@ Planner brief:
 {planner_brief}
 """
     try:
-        return call_agent_api(prompt, "Intro", PAPER_INTRO_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Intro", PAPER_INTRO_PRINCIPAL_ID)
+        if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
+            print("[Intro Agent] Meta-response detected, retrying...")
+            result = call_agent_api(prompt, "Intro retry", PAPER_INTRO_PRINCIPAL_ID)
+        return result
     except Exception as exc:
         print(f"Intro agent failed; using fallback. Reason: {exc}")
         return fallback_intro(str(exc))

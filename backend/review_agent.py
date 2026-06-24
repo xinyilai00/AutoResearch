@@ -9,8 +9,10 @@ from pathlib import Path
 
 import requests
 
-from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
-
+try:
+    from .config import AGENT_ID, API_KEY, BASE_URL, MODEL, PAPER_REVIEW_PRINCIPAL_ID, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+except ImportError:
+    from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PAPER_REVIEW_PRINCIPAL_ID, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 @dataclass
 class ReviewScore:
@@ -37,7 +39,7 @@ def run_agent_prompt(user_input: str) -> str:
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {API_KEY}",
-        "X-Principal-Id": PRINCIPAL_ID,
+        "X-Principal-Id": PAPER_REVIEW_PRINCIPAL_ID,
     }
     
     body = {
@@ -79,7 +81,7 @@ def run_agent_prompt(user_input: str) -> str:
 def read_agent_stream(request_id: str) -> str:
     headers = {
         "Authorization": f"Bearer {API_KEY}",
-        "X-Principal-Id": PRINCIPAL_ID,
+        "X-Principal-Id": PAPER_REVIEW_PRINCIPAL_ID,
     }
     response = requests.get(
         f"{BASE_URL.rstrip('/')}/api/agent/run/stream",
@@ -267,7 +269,7 @@ Review this draft:
 def revise_draft(draft: str, review: Review) -> str:
     prompt = f"""You are a strict paper revision agent.
 
-CRITICAL: Output the complete revised paper directly. Do not say "I will", "I'll", "Let me", "I'll systematically", or narrate your intentions in any way. Do not include any text before the paper title. Start immediately with the paper title as a Markdown H1 heading.
+CRITICAL: Output the complete revised paper directly. Do not say "I will", "I'll", "Let me", "I'll systematically", "The revised paper has been delivered", "Here is a summary of", or narrate your intentions in any way. Do not include any text before the paper title. Start immediately with the paper title as a Markdown H1 heading. Output only the full paper.
 
 Revise this paper using the review.
 
@@ -288,8 +290,20 @@ Review:
 Draft:
 {draft}
 """
+    meta_starts = (
+        "i'll", "i will", "here is", "let me", "the revised paper",
+        "here is a summary", "i have revised", "below is the revised",
+        "the paper has been", "i've revised",
+    )
     try:
-        return run_agent_prompt(prompt)
+        result = run_agent_prompt(prompt)
+        if result.strip().lower().startswith(meta_starts):
+            print("Revision meta-response detected, retrying...")
+            result = run_agent_prompt(prompt)
+        if result.strip().lower().startswith(meta_starts):
+            print("Revision meta-response on retry, keeping original draft.")
+            return draft
+        return result
     except Exception as exc:
         print(f"Revision API unavailable; keeping draft with local review note. Reason: {exc}")
         note = "\n\n## Automated Review Note\n"

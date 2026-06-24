@@ -13,6 +13,8 @@ except ImportError:
 PLANNER_PROMPT = """
 You are the Planner Agent in an autonomous multi-agent research paper writing pipeline.
 
+CRITICAL: Output the five tailored packages directly. Do not say "I will", "I'll", "Let me", "I'll now", or narrate your intentions. Start immediately with === INTRO BRIEF ===.
+
 Input:
 - Research topic
 - PI output
@@ -89,29 +91,34 @@ BRIEF:
 
 def parse_planner_output(text: str) -> dict[str, str]:
     sections = {
-        "intro": "=== INTRO BRIEF ===",
-        "litreview": "=== LITREVIEW BRIEF ===",
-        "methodology": "=== METHODOLOGY BRIEF ===",
-        "results": "=== RESULTS BRIEF ===",
-        "conclusion": "=== CONCLUSION BRIEF ===",
+        "intro": ["=== INTRO BRIEF ===", "INTRO BRIEF", "INTRODUCTION BRIEF"],
+        "litreview": ["=== LITREVIEW BRIEF ===", "LITREVIEW BRIEF", "LITERATURE REVIEW BRIEF"],
+        "methodology": ["=== METHODOLOGY BRIEF ===", "METHODOLOGY BRIEF"],
+        "results": ["=== RESULTS BRIEF ===", "RESULTS BRIEF", "RESULTS AND DISCUSSION BRIEF"],
+        "conclusion": ["=== CONCLUSION BRIEF ===", "CONCLUSION BRIEF"],
     }
-    parsed = {}
-    keys = list(sections.keys())
-    markers = list(sections.values())
 
-    for index, key in enumerate(keys):
-        start_marker = markers[index]
-        start = text.find(start_marker)
-        if start == -1:
-            parsed[key] = ""
-            continue
-        start += len(start_marker)
-        end = len(text)
-        if index + 1 < len(markers):
-            next_start = text.find(markers[index + 1], start)
-            if next_start != -1:
-                end = next_start
+    parsed = {}
+    upper_text = text.upper()
+
+    marker_positions = []
+    for key, variants in sections.items():
+        for variant in variants:
+            pos = upper_text.find(variant.upper())
+            if pos != -1:
+                marker_positions.append((pos, key, variant))
+                break
+
+    marker_positions.sort(key=lambda x: x[0])
+
+    for i, (pos, key, variant) in enumerate(marker_positions):
+        start = pos + len(variant)
+        end = marker_positions[i + 1][0] if i + 1 < len(marker_positions) else len(text)
         parsed[key] = text[start:end].strip()
+
+    for key in sections:
+        if key not in parsed:
+            parsed[key] = text
 
     return parsed
 
@@ -160,8 +167,19 @@ Proposal output:
 Experiment output:
 {experiment}
 """
+    meta_starts = (
+        "i'll", "i will", "let me", "i'll now", "here is",
+        "i'm going to", "i will now", "let me now", "i'll analyze",
+        "i'll carefully", "i'll compile",
+    )
     try:
         raw = call_agent_api(prompt, "Planner", PAPER_PLANNER_PRINCIPAL_ID)
+        if raw.strip().lower().startswith(meta_starts):
+            print("[Planner Agent] Meta-response detected, retrying...")
+            raw = call_agent_api(prompt, "Planner retry", PAPER_PLANNER_PRINCIPAL_ID)
+        if raw.strip().lower().startswith(meta_starts):
+            print("[Planner Agent] Meta-response on retry, using fallback.")
+            return fallback_planner(topic, "Meta-response detected twice.")
         return parse_planner_output(raw)
     except Exception as exc:
         print(f"Planner failed; using fallback. Reason: {exc}")

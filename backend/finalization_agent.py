@@ -9,7 +9,19 @@ except ImportError:
 
 
 FINALIZATION_PROMPT = """
-You are the Finalization Agent in an autonomous multi-agent research paper writing pipeline.
+You are starting a completely fresh task. Ignore any previous context or conversations.
+
+You are the Paper Assembly Agent in an autonomous multi-agent research paper writing pipeline.
+
+CRITICAL:
+- Output the complete assembled paper directly as plain text in this response.
+- Do NOT write to any files.
+- Do NOT use any tools.
+- Do NOT summarize what you did.
+- Do NOT say "the paper has been delivered" or "here is a summary".
+- Do NOT include any text before the paper title.
+- Start immediately with the paper title as a Markdown H1 heading.
+- Your entire response must be the full paper text itself.
 
 Input:
 - Five independently written paper sections: Abstract, Introduction, Literature Review, Methodology, Results, Discussion, Conclusion.
@@ -113,8 +125,21 @@ Sections to assemble:
 
 {conclusion}
 """
+    meta_starts = (
+        "i'll", "i will", "here is", "let me", "the complete",
+        "the paper has", "i have assembled", "below is",
+        "i've assembled", "the assembled", "here's the",
+        "the complete assembled", "all seven sections",
+    )
     try:
-        return call_agent_api(prompt, "Finalization", PAPER_FINALIZATION_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Finalization", PAPER_FINALIZATION_PRINCIPAL_ID)
+        if result.strip().lower().startswith(meta_starts):
+            print("[Finalization Agent] Meta-response detected, retrying...")
+            result = call_agent_api(prompt, "Finalization retry", PAPER_FINALIZATION_PRINCIPAL_ID)
+        if result.strip().lower().startswith(meta_starts):
+            print("[Finalization Agent] Meta-response on retry, using fallback.")
+            return fallback_finalization(intro, litreview, methodology, results, conclusion, "Meta-response detected twice.")
+        return result
     except Exception as exc:
         print(f"Finalization agent failed; using fallback. Reason: {exc}")
         return fallback_finalization(intro, litreview, methodology, results, conclusion, str(exc))
