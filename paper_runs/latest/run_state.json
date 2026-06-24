@@ -1,12 +1,12 @@
 {
   "active_outputs": {
-    "pi": "paper_runs/latest/stage_outputs/pi_output_v03.md",
-    "literature": "paper_runs/latest/stage_outputs/literature_output_v02.md",
-    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v02.md",
-    "research_question": "paper_runs/latest/stage_outputs/research_question_output_v02.md",
-    "deep_literature": "paper_runs/latest/stage_outputs/deep_literature_output_v02.md",
-    "proposal": "paper_runs/latest/stage_outputs/proposal_output_v02.md",
-    "experiment": "paper_runs/latest/stage_outputs/experiment_output_v02.md"
+    "pi": "paper_runs/latest/stage_outputs/pi_output_v05.md",
+    "literature": "paper_runs/latest/stage_outputs/literature_output_v04.md",
+    "research_questions": "paper_runs/latest/stage_outputs/research_questions_output_v04.md",
+    "research_question": "paper_runs/latest/stage_outputs/research_question_output_v04.md",
+    "deep_literature": "paper_runs/latest/stage_outputs/deep_literature_output_v04.md",
+    "proposal": "paper_runs/latest/stage_outputs/proposal_output_v04.md",
+    "experiment": "paper_runs/latest/stage_outputs/experiment_output_v04.md"
   },
   "stage_status": {
     "pi": "generated",
@@ -35,6 +35,16 @@
         "version": 3,
         "path": "paper_runs/latest/stage_outputs/pi_output_v03.md",
         "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v04.md",
+        "status": "generated"
+      },
+      {
+        "version": 5,
+        "path": "paper_runs/latest/stage_outputs/pi_output_v05.md",
+        "status": "generated"
       }
     ],
     "literature": [
@@ -46,6 +56,16 @@
       {
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/literature_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/literature_output_v04.md",
         "status": "generated"
       }
     ],
@@ -59,6 +79,16 @@
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/research_questions_output_v02.md",
         "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/research_questions_output_v04.md",
+        "status": "generated"
       }
     ],
     "research_question": [
@@ -70,6 +100,16 @@
       {
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/research_question_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/research_question_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/research_question_output_v04.md",
         "status": "generated"
       }
     ],
@@ -83,6 +123,16 @@
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/deep_literature_output_v02.md",
         "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/deep_literature_output_v04.md",
+        "status": "generated"
       }
     ],
     "proposal": [
@@ -94,6 +144,16 @@
       {
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/proposal_output_v02.md",
+        "status": "generated"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/proposal_output_v03.md",
+        "status": "generated"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/proposal_output_v04.md",
         "status": "generated"
       }
     ],
@@ -107,6 +167,16 @@
         "version": 2,
         "path": "paper_runs/latest/stage_outputs/experiment_output_v02.md",
         "status": "redesign_needed"
+      },
+      {
+        "version": 3,
+        "path": "paper_runs/latest/stage_outputs/experiment_output_v03.md",
+        "status": "redesign_needed"
+      },
+      {
+        "version": 4,
+        "path": "paper_runs/latest/stage_outputs/experiment_output_v04.md",
+        "status": "redesign_needed"
       }
     ]
   },
@@ -119,6 +189,6 @@
     ]
   },
   "metadata": {
-    "topic": "Drake vs Kendrick impact on white teenagers"
+    "topic": "Lionel Messi impact on Argentinian youth"
   }
 }

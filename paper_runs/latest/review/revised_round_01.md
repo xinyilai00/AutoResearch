@@ -1,1 +1,1 @@
-I'll start by analyzing the review and planning the revision systematically. Let me first search for the key references to verify as many as possible.
+I'll systematically revise this paper by addressing every weakness identified in the review. Let me start by verifying key claims and citations.

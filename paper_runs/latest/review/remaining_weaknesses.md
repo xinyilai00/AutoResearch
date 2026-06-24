@@ -4,26 +4,27 @@
 - Novelty: 2/5
 - Correctness: 2/5
 - Evidence: 1/5
-- Clarity: 4/5
-- Reproducibility: 2/5
-- Total: 11/25
+- Clarity: 3/5
+- Reproducibility: 1/5
+- Total: 9/25
 
 ## Strengths
-- The methodological framework is described in considerable detail, including a well-structured thematic coding schema with clear operational definitions, specific statistical tests, sample size targets, and a coherent integration strategy linking lyrical analysis to audience reception metrics.
+- The theoretical framework integrating mega-event participation legacy research, athlete branding theory, and South American football culture studies is well-structured, and the proposed intensification-of-existing-interest mechanism offers a conceptually meaningful refinement of the trickle-down effect for football-saturated cultural contexts.
 
 ## Weaknesses
-- Every single reference in the bibliography is marked 'provisional citation. TODO: Verify full bibliographic details,' meaning the entire evidence base is unverified and potentially fabricated, which fatally undermines all literature-grounded claims throughout the paper.
-- The paper contains zero empirical results — all quantitative outputs are labeled PENDING — yet the Results section presents directional predictions in tabular form with specific expected effect sizes (e.g., 'Large (d > 0.80)') that could easily be mistaken for actual findings by readers who do not note the disclaimers.
-- Statistical claims such as anticipated Cohen's d values and hypothesized correlation thresholds (|r| >= 0.30) are presented without any supporting data, making them speculative assertions rather than evidence-based conclusions.
-- The demographic identification method for 'self-identified white teenage users' on social media is acknowledged as imprecise but no validation study, pilot test, or inter-rater reliability result is provided to demonstrate feasibility of the proposed multi-signal approach.
-- The paper asserts that 'no empirical study has systematically compared these two artists' thematic output' but this gap claim cannot be substantiated given that every cited source is an unverified provisional citation.
-- No limitations section addresses the risk that the Pushshift API (deprecated in 2023) and Twitter/X Academic Research API (severely restricted post-2023) may be unavailable, making the proposed data collection pipeline potentially infeasible as specified.
-- The Discussion section extensively interprets hypothesized patterns (e.g., 'low-friction' vs. 'high-friction' entry points into hip-hop) as though they were established findings, constituting result/discussion leakage despite the absence of any actual results.
+- No empirical analysis was executed and all hypotheses remain untested, making this a research proposal rather than a completed study with findings.
+- Every single reference (approximately 30 entries) contains 'TODO — source identified in pipeline literature retrieval; full bibliographic record pending verification,' meaning the entire citation base is unverified and potentially fabricated-looking.
+- The paper contains an explicit TODO marker for an unsupported numeric claim: 'an estimated five million people gathering in Buenos Aires alone for the team's return parade (TODO: verification needed from official government sources).'
+- The datasets the authors attempted to access (Capology European league salary data, Bundesliga club-level data) are entirely irrelevant to the stated research question about Argentine youth football registration, revealing a fundamental mismatch between the data strategy and the research design.
+- The SSL certificate verification failures are environmental configuration issues rather than genuine data access barriers, yet the paper frames them as substantive obstacles without attempting alternative access methods.
+- Figure and table generation prompts are embedded in the manuscript body rather than actual rendered figures or tables, indicating the paper is in a pre-production state.
+- The paper contains a typographical error ('robustustness criterion') in the Methodology section.
+- No limitations section addresses the possibility that the hypothesized effect may simply not exist, focusing instead on data access problems.
 
 ## Revision Plan
-- Verify and provide complete, accurate bibliographic details for every reference, removing all 'TODO' markers, or delete any citation that cannot be confirmed through a legitimate scholarly database.
-- Reclassify the paper explicitly as a research proposal or registered report rather than an empirical study, and restructure the Results section into a 'Predicted Outcomes' section to prevent any confusion between hypotheses and findings.
-- Conduct and report a pilot study — even on a small convenience sample (e.g., 50 songs, 50 social media posts) — to demonstrate that the thematic coding schema, demographic identification pipeline, and sentiment analysis tools function as specified and to provide preliminary reliability statistics (e.g., Cohen's kappa for inter-coder agreement).
-- Remove all speculative effect size predictions from tables or clearly label them in a separate 'Directional Hypotheses' appendix to eliminate the appearance of fabricated quantitative results.
-- Add a feasibility assessment for each proposed data source (Pushshift API, Twitter/X Academic Research API, Genius API), documenting current access restrictions and proposing concrete alternative data acquisition strategies.
-- Include a dedicated subsection on positionality and researcher reflexivity, given the sensitive nature of studying cross-racial media effects and the ethical implications of inferring racial identity from social media profiles.
+- Complete full bibliographic verification for all references and remove any citations that cannot be confirmed against actual published sources.
+- Verify or remove the five million people claim and all other numeric assertions lacking confirmed sources.
+- Either obtain the required AFA youth registration data through direct institutional contact, freedom-of-information requests, or partnership agreements, or reframe the paper explicitly as a registered research design/pre-registration document rather than an empirical study.
+- Replace the irrelevant dataset access attempts (Capology, Bundesliga) with a documented search for actual Argentine youth sport participation data sources, including direct outreach to AFA, provincial sports ministries, and municipal leagues.
+- Generate and embed the actual figures and tables described in the Figure Generation Notes section, or remove the placeholder prompts from the manuscript.
+- Add a substantive discussion of the null hypothesis possibility — that the Messi effect on registrations may be zero — rather than framing the data gap as the sole obstacle to confirming the hypothesized effect.
