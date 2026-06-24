@@ -1100,16 +1100,65 @@ EXPERIMENT EXECUTION SPEC:
 """
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
-    print("\n[Proposal Agent] Designing experiment proposal...")
+    print("\n[Proposal Agent] Orchestrating proposal subagents...")
     deep_literature_text = read_text_or_path(deep_literature_review)
-    print("[Proposal Agent] Searching public dataset candidates...")
-    public_sources = search_public_datasets(research_question)
-    public_sources_text = format_public_sources_for_prompt(public_sources)
+
     try:
-        return run_proposal_agent(research_question, deep_literature_text, public_sources_text)
+        try:
+            from .hypothesis_agent import run_hypothesis_agent
+            from .dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
+            from .schema_agent import run_schema_agent
+            from .analysis_agent import run_analysis_agent
+            from .final_agent_prop import run_final_agent_prop
+        except ImportError:
+            from hypothesis_agent import run_hypothesis_agent
+            from dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
+            from schema_agent import run_schema_agent
+            from analysis_agent import run_analysis_agent
+            from final_agent_prop import run_final_agent_prop
+
+        proposal_dir = Path("paper_runs/latest/proposal")
+        proposal_dir.mkdir(parents=True, exist_ok=True)
+
+        print("[Proposal Agent] Running Hypothesis Agent...")
+        hypothesis_output = run_hypothesis_agent(research_question, deep_literature_text)
+        (proposal_dir / "hypothesis_output.md").write_text(hypothesis_output, encoding="utf-8")
+
+        dataset_report = run_dataset_agent(research_question, proposal_dir / "dataset")
+        schema_report = run_schema_agent(dataset_report, proposal_dir / "schema")
+
+        print("[Proposal Agent] Running Analysis Agent...")
+        analysis_spec = run_analysis_agent(hypothesis_output, dataset_report, schema_report)
+        (proposal_dir / "analysis_spec.json").write_text(json.dumps(analysis_spec, indent=2), encoding="utf-8")
+
+        final_proposal = run_final_agent_prop(
+            research_question,
+            hypothesis_output,
+            dataset_report,
+            schema_report,
+            analysis_spec,
+        )
+        (proposal_dir / "final_proposal.md").write_text(final_proposal, encoding="utf-8")
+
+        public_sources_text = dataset_report_to_prompt_text(dataset_report)
+        is_valid, reason = validate_proposal_output(final_proposal, public_sources_text)
+        if is_valid:
+            return final_proposal
+
+        repaired = locally_repair_execution_spec(final_proposal, public_sources_text)
+        if repaired:
+            repaired_is_valid, repaired_reason = validate_proposal_output(repaired, public_sources_text)
+            if repaired_is_valid:
+                print(f"Final proposal needed local execution-spec repair. Reason: {reason}")
+                (proposal_dir / "final_proposal.md").write_text(repaired, encoding="utf-8")
+                return repaired
+            print(f"Final proposal repair was not enough. Reason: {repaired_reason}")
+
+        print(f"Final proposal invalid; using fallback. Reason: {reason}")
+        return fallback_proposal(research_question, reason, public_sources_text)
     except Exception as exc:
         print(f"Proposal failed; using placeholder. Reason: {exc}")
-        return fallback_proposal(research_question, str(exc), public_sources_text)
+        return fallback_proposal(research_question, str(exc), "")
 
 if __name__ == "__main__":
     question = input("Enter selected research question: ")
