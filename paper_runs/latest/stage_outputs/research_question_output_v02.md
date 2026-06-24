@@ -1,1 +1,0 @@
-How do the lyrical themes of Drake and Kendrick Lamar differ in their treatment of race, masculinity, and emotional vulnerability, and to what extent do these thematic differences correspond to distinct patterns of engagement and sentiment among self-identified white teenage users on public social media platforms such as Reddit and Twitter?
