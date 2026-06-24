@@ -94,6 +94,30 @@ SUPPORTED_RUNNER_TYPES = {
 SUPPORTED_TASK_TYPES = {"classification", "regression", "auto", "inspect"}
 SUPPORTED_METRICS = {"accuracy", "mae", "rmse", "r2", "none", "inspect"}
 SUPPORTED_DATA_EXTENSIONS = {".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".zip"}
+NON_DATA_FILE_MARKERS = (
+    ".babelrc",
+    ".claude/",
+    ".editorconfig",
+    ".eslintrc",
+    ".github/",
+    ".gitignore",
+    ".markdownlint",
+    ".prettierrc",
+    "cargo.lock",
+    "composer.lock",
+    "config/",
+    "eslint.config",
+    "flake.lock",
+    "package-lock.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "pyproject.toml",
+    "requirements.txt",
+    "settings.json",
+    "tsconfig",
+    "yarn.lock",
+)
 
 
 def needs_redesign(spec: dict) -> str | None:
@@ -149,18 +173,19 @@ def needs_redesign(spec: dict) -> str | None:
 def looks_like_csv_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     path = parsed.path.lower()
-    return path.endswith(".csv") or "raw.githubusercontent.com" in parsed.netloc or "huggingface.co" in parsed.netloc
+    return path.endswith(".csv")
 
 
 def looks_like_supported_data_file(url_or_path: str) -> bool:
     parsed = urllib.parse.urlparse(url_or_path)
     path = parsed.path.lower()
     suffix = Path(path).suffix
-    return (
-        suffix in SUPPORTED_DATA_EXTENSIONS
-        or "raw.githubusercontent.com" in parsed.netloc
-        or "huggingface.co" in parsed.netloc
-    )
+    if suffix not in SUPPORTED_DATA_EXTENSIONS:
+        return False
+    if any(marker in path for marker in NON_DATA_FILE_MARKERS):
+        return False
+    name = path.rsplit("/", 1)[-1]
+    return not name.startswith(".")
 
 
 def dataset_urls_from_spec(spec: dict) -> list[str]:
@@ -179,16 +204,21 @@ def load_csvs(spec: dict, output_dir: Path) -> tuple[list[dict], list[Path]]:
     output_dir.mkdir(parents=True, exist_ok=True)
     all_rows = []
     data_paths = []
+    failures = []
 
     for index, dataset_url in enumerate(dataset_urls, 1):
         data_path = output_dir / f"dataset_{index:02d}.csv"
-        if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
-            with urllib.request.urlopen(dataset_url, timeout=120) as response:
-                data = response.read()
-            data_path.write_bytes(data)
-        else:
-            source_path = Path(dataset_url)
-            data_path.write_bytes(source_path.read_bytes())
+        try:
+            if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
+                with urllib.request.urlopen(dataset_url, timeout=120) as response:
+                    data = response.read()
+                data_path.write_bytes(data)
+            else:
+                source_path = Path(dataset_url)
+                data_path.write_bytes(source_path.read_bytes())
+        except Exception as exc:
+            failures.append(f"{dataset_url}: {exc}")
+            continue
 
         with data_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
@@ -197,6 +227,8 @@ def load_csvs(spec: dict, output_dir: Path) -> tuple[list[dict], list[Path]]:
         data_paths.append(data_path)
 
     if not all_rows:
+        if failures:
+            raise ValueError("No CSV datasets could be loaded. Failures: " + " | ".join(failures[:5]))
         raise ValueError("Dataset CSV loaded but has no rows.")
     return all_rows, data_paths
 
@@ -213,18 +245,25 @@ def download_data_files(spec: dict, output_dir: Path) -> list[Path]:
     dataset_urls = dataset_urls_from_spec(spec)
     output_dir.mkdir(parents=True, exist_ok=True)
     data_paths = []
+    failures = []
 
     for index, dataset_url in enumerate(dataset_urls, 1):
         data_path = output_dir / filename_from_dataset_url(dataset_url, index)
-        if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
-            with urllib.request.urlopen(dataset_url, timeout=120) as response:
-                data = response.read()
-            data_path.write_bytes(data)
-        else:
-            source_path = Path(dataset_url)
-            data_path.write_bytes(source_path.read_bytes())
+        try:
+            if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
+                with urllib.request.urlopen(dataset_url, timeout=120) as response:
+                    data = response.read()
+                data_path.write_bytes(data)
+            else:
+                source_path = Path(dataset_url)
+                data_path.write_bytes(source_path.read_bytes())
+        except Exception as exc:
+            failures.append(f"{dataset_url}: {exc}")
+            continue
         data_paths.append(data_path)
 
+    if not data_paths and failures:
+        raise ValueError("No data files could be downloaded or loaded. Failures: " + " | ".join(failures[:5]))
     return data_paths
 
 
@@ -353,6 +392,15 @@ def infer_target_column(rows: list[dict]) -> str:
         raise ValueError("Cannot infer target column because the CSV has no usable columns.")
 
     preferred_names = [
+        "injury",
+        "injured",
+        "injury_label",
+        "injury_status",
+        "injury_next_7d",
+        "target_injury_next_7d",
+        "injured_next_week",
+        "injured_next_7d",
+        "is_injured",
         "target",
         "label",
         "class",
@@ -553,6 +601,7 @@ def redesign_result(proposal: str, output_dir: Path, reason: str, spec: dict | N
     limitations = [
         "No empirical results were generated.",
         "The current Experiment Agent can execute universal_tabular_csv and universal_data_file specs only.",
+        "The proposal must be redesigned as an executable analysis over downloadable/public data files before this stage can run.",
     ]
     notes = str(spec.get("notes_for_experiment_agent", "")).strip()
     if notes:
@@ -621,8 +670,8 @@ def universal_inventory_result(
             "file_types": sorted({str(item.get("type")) for item in inventory}),
         },
         limitations=[
-            "The universal_data_file runner loads and inspects common data files but does not perform scraping, API pagination, NLP extraction, graph construction, deep learning, or statistical tests.",
-            "Provide a direct target column and a supported task type to run a simple baseline, or implement a specialized runner for the full proposed experiment.",
+            "The universal_data_file runner loads and inspects common data files but does not perform scraping, API pagination, NLP extraction, graph construction, deep learning, or advanced statistical tests.",
+            "Provide a direct target column and a supported task type to run a simple dataset analysis, or implement a specialized runner for the full proposed dataset analysis.",
         ],
         output_files=[*(str(path) for path in data_paths), str(inventory_path), str(output_dir / "experiment_result.json"), str(output_dir / "experiment_output.md")],
     )
@@ -644,18 +693,34 @@ def run_universal_data_file_experiment(spec: dict, output_path: Path) -> str:
             "No tabular rows could be extracted from the provided files.",
         )
 
-    if task_type_requested == "inspect" or target_column.upper() in {"", "TO_VERIFY"}:
+    if target_column.upper() in {"", "TO_VERIFY", "AUTO_TARGET"}:
+        try:
+            target_column = infer_target_column(rows)
+            spec = dict(spec)
+            spec["target_column"] = target_column
+            if task_type_requested == "inspect":
+                task_type_requested = "auto"
+                spec["task_type"] = "auto"
+        except ValueError as exc:
+            return universal_inventory_result(
+                spec,
+                output_path,
+                rows,
+                data_paths,
+                inventory,
+                f"Could not infer an executable target column: {exc}",
+            )
+
+    if task_type_requested == "inspect":
         return universal_inventory_result(
             spec,
             output_path,
             rows,
             data_paths,
             inventory,
-            "No executable target column was provided.",
+            "Task type is inspect, so no baseline model was run.",
         )
 
-    if target_column.upper() == "AUTO_TARGET":
-        target_column = infer_target_column(rows)
     if target_column not in rows[0]:
         return universal_inventory_result(
             spec,
@@ -1002,6 +1067,44 @@ def run_financial_sentiment_timeseries_experiment(spec: dict, output_path: Path)
     return write_outputs(output_path, result)
 
 
+def inspect_available_files_for_redesign(spec: dict, output_path: Path, reason: str) -> str | None:
+    readable_urls = [
+        url
+        for url in dataset_urls_from_spec(spec)
+        if url.upper() != "TO_VERIFY"
+        and (
+            (url.startswith("http://") or url.startswith("https://") or Path(url).exists())
+            and looks_like_supported_data_file(url)
+        )
+    ]
+    if not readable_urls:
+        return None
+
+    inspect_spec = dict(spec)
+    inspect_spec.update(
+        {
+            "runner_type": "universal_data_file",
+            "task_type": "inspect",
+            "dataset_url": readable_urls[0],
+            "dataset_urls": readable_urls,
+            "success_metric": "inspect",
+        }
+    )
+    try:
+        rows, data_paths, inventory = load_universal_data_files(inspect_spec, output_path)
+    except Exception:
+        return None
+
+    return universal_inventory_result(
+        inspect_spec,
+        output_path,
+        rows,
+        data_paths,
+        inventory,
+        reason,
+    )
+
+
 
 def run_experiment_stage(
     proposal_input: str | Path,
@@ -1018,6 +1121,9 @@ def run_experiment_stage(
 
     redesign_reason = needs_redesign(spec)
     if redesign_reason:
+        inspected = inspect_available_files_for_redesign(spec, output_path, redesign_reason)
+        if inspected:
+            return inspected
         return redesign_result(proposal, output_path, redesign_reason, spec)
 
     try:
@@ -1029,7 +1135,7 @@ def run_experiment_stage(
 
         rows, data_paths = load_csvs(spec, output_path)
         target_column = str(spec["target_column"]).strip()
-        if target_column.upper() == "AUTO_TARGET":
+        if target_column.upper() in {"", "TO_VERIFY", "AUTO_TARGET"}:
             target_column = infer_target_column(rows)
         if target_column not in rows[0]:
             raise ValueError(f"Target column '{target_column}' does not exist in the CSV header.")

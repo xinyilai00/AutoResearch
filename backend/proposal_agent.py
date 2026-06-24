@@ -21,11 +21,14 @@ Input:
 - A deep literature review from previous stages
 
 Job:
-Present an experiment based on existing literature and provide a hypothesis for the research question.
+Present an executable data analysis design based on existing literature and provide a hypothesis for the research question.
 
 Critical rules:
-- The experiment CANNOT be fake.
-- The experiment must be possible to implement using only public data, prior-work datasets, or data obtainable from public databases/repositories such as arXiv, Semantic Scholar, OpenAlex, Kaggle, Hugging Face Datasets, UCI, Papers With Code, PubMed, Crossref, GitHub, or other legitimate public sources.
+- The data analysis CANNOT be fake.
+- The data analysis must be possible to implement using only public data, prior-work datasets, or data obtainable from public databases/repositories such as arXiv, Semantic Scholar, OpenAlex, Kaggle, Hugging Face Datasets, UCI, Papers With Code, PubMed, Crossref, GitHub, or other legitimate public sources.
+- Treat the word "experiment" as an executable data analysis experiment. Do not propose a lab experiment, clinical study, human-subject intervention, wet-lab procedure, survey collection, physical sensor deployment, or any design that requires collecting new private data.
+- The Experiment Agent can only run analysis over databases/files it can load. Therefore the proposal must define data sources, variables, preprocessing, modeling/statistical analysis, baselines, metrics, validation splits, and success criteria.
+- If the real answer would require new data collection or a non-data-analysis procedure, state that clearly and set runner_type to NEEDS_NEW_RUNNER.
 - Do not claim that a dataset exists unless it is named in the deep literature review, listed in the public dataset search results, or clearly marked as TO_VERIFY.
 - Do not fabricate citations, dataset sizes, URLs, metrics, baselines, or prior results.
 - If you cite or refer to prior work, use author-year format only, such as (Smith, 2023).
@@ -34,8 +37,8 @@ Critical rules:
 - If a GitHub, Hugging Face, or UCI result is used, label it with its source status and explain that the Experiment stage must verify license, data files, documentation quality, schema, and reproducibility before execution.
 - The proposal must be implementable by a later Experiment Agent using code and downloaded/public data.
 - The proposal must include a machine-readable EXPERIMENT EXECUTION SPEC so the Experiment Agent knows exactly what to download/load, what target column to use, what task type to run, and what metric determines success.
-- Prefer experiments that can be run with reasonable compute and reproducible data.
-- Do not execute the experiment.
+- Prefer analyses that can be run with reasonable compute and reproducible data.
+- Do not execute the analysis.
 - Do not write code.
 - Return plain text only.
 
@@ -48,7 +51,7 @@ HYPOTHESIS:
 [one testable hypothesis]
 
 EXPERIMENT DESIGN:
-[specific experiment design based on the literature]
+[specific executable data analysis design based on public/prior-work datasets; do not propose a lab experiment, human-subject study, wet-lab procedure, or non-executable intervention]
 
 PUBLIC DATA SOURCES:
 - [dataset/source 1]: [what it contains, why it is relevant, whether it is CONFIRMED_FROM_LITERATURE or TO_VERIFY]
@@ -58,7 +61,7 @@ DATA COLLECTION PLAN:
 [how the Experiment Agent should retrieve or construct the dataset from public sources]
 
 METHODOLOGY:
-[models, baselines, analysis methods, validation scheme, and statistical tests]
+[data preprocessing, variables, models or statistical methods, baselines, validation scheme, and evaluation metrics]
 
 KEY VARIABLES:
 - Independent variables: [...]
@@ -71,7 +74,7 @@ SUCCESS CRITERIA:
 - [criterion 3]
 
 FEASIBILITY CHECK:
-[why this can be implemented with public/prior-work data only, or what must be verified before running]
+[why this can be implemented with public/prior-work data only, or what must be verified before analysis]
 
 LIMITATIONS AND RISKS:
 - [limitation/risk 1]
@@ -101,7 +104,7 @@ Rules for EXPERIMENT EXECUTION SPEC:
 - Use runner_type financial_sentiment_timeseries for stock-return forecasting experiments that combine OHLCV data, financial news/headlines, FinBERT or sentiment features, FRED/VIX regime data, and time-series regression targets.
 - financial_sentiment_timeseries can run a safe baseline from local/direct OHLCV files or optional yfinance downloads, and it can use headline files when directly provided. It cannot automatically access Kaggle pages without credentials.
 - Use runner_type event_graph_classification when the experiment starts from event records that can be loaded from direct JSON, JSONL, CSV, TSV, or ZIP files and transformed into source-target graphs for classification. This includes passing networks, transaction networks, communication networks, citation/event logs, and other relational event data.
-- Use runner_type NEEDS_NEW_RUNNER when the real experiment requires web scraping, credentialed APIs, API pagination, NLP extraction from many documents, images, PDFs, custom simulation, reinforcement learning, complex time series/backtesting, causal inference, SHAP, bootstrapping, or unsupported metrics.
+- Use runner_type NEEDS_NEW_RUNNER when the real experiment requires new data collection, lab or clinical procedures, human-subject intervention, web scraping, credentialed APIs, API pagination, NLP extraction from many documents, images, PDFs, custom simulation, reinforcement learning, complex time series/backtesting, causal inference, SHAP, bootstrapping, or unsupported metrics.
 - Use AUTO_TARGET when a direct CSV is available but its schema has not been inspected yet.
 - Use task_type auto when a direct CSV is available but the target type is not known yet.
 - Use TO_VERIFY only when no direct executable CSV or local CSV path is available.
@@ -113,6 +116,30 @@ Rules for EXPERIMENT EXECUTION SPEC:
 
 
 SUPPORTED_DIRECT_DATA_SUFFIXES = (".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".zip")
+NON_DATA_FILE_MARKERS = (
+    ".babelrc",
+    ".claude/",
+    ".editorconfig",
+    ".eslintrc",
+    ".github/",
+    ".gitignore",
+    ".markdownlint",
+    ".prettierrc",
+    "cargo.lock",
+    "composer.lock",
+    "config/",
+    "eslint.config",
+    "flake.lock",
+    "package-lock.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "pyproject.toml",
+    "requirements.txt",
+    "settings.json",
+    "tsconfig",
+    "yarn.lock",
+)
 RELEVANCE_STOPWORDS = {
     "about",
     "after",
@@ -156,7 +183,56 @@ RELEVANCE_STOPWORDS = {
     "using",
     "with",
 }
-
+GENERIC_ANALYSIS_TOKENS = {
+    "accuracy",
+    "algorithm",
+    "algorithms",
+    "analysis",
+    "analytics",
+    "auc",
+    "baseline",
+    "benchmarks",
+    "benchmark",
+    "classification",
+    "classifier",
+    "classifiers",
+    "csv",
+    "data",
+    "dataset",
+    "datasets",
+    "deep",
+    "detect",
+    "detection",
+    "evaluate",
+    "evaluated",
+    "evaluation",
+    "feature",
+    "features",
+    "forecast",
+    "forecasting",
+    "learning",
+    "machine",
+    "metric",
+    "metrics",
+    "model",
+    "modeling",
+    "models",
+    "neural",
+    "predict",
+    "predicting",
+    "prediction",
+    "predictive",
+    "regression",
+    "results",
+    "supervised",
+    "test",
+    "testing",
+    "train",
+    "trained",
+    "training",
+    "transfer",
+    "validation",
+}
 
 def read_text_or_path(value: str | Path) -> str:
     if isinstance(value, str) and len(value) > 500:
@@ -169,31 +245,51 @@ def read_text_or_path(value: str | Path) -> str:
         pass
     return str(value)
 
-
 def github_search_queries(query: str) -> list[str]:
     cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", query)
+    stopwords = {
+        "the",
+        "and",
+        "for",
+        "from",
+        "with",
+        "that",
+        "this",
+        "what",
+        "extent",
+        "across",
+        "can",
+        "are",
+        "well",
+        "how",
+        "does",
+        "into",
+        "when",
+        "where",
+        "which",
+        "using",
+        "based",
+        "between",
+        "compared",
+        "than",
+        "their",
+        "have",
+        "has",
+        "had",
+        "been",
+        "will",
+        "would",
+        "could",
+        "should",
+    }
     words = [
         word
         for word in cleaned.split()
-        if len(word) > 2
-        and word.lower()
-        not in {
-            "the",
-            "and",
-            "for",
-            "from",
-            "with",
-            "that",
-            "this",
-            "what",
-            "extent",
-            "across",
-            "can",
-            "are",
-            "well",
-        }
+        if len(word) > 2 and word.lower() not in stopwords
     ]
     compact = " ".join(words[:10])
+    short_compact = " ".join(words[:6])
+    tail_compact = " ".join(words[6:14])
     focused = " ".join(
         word
         for word in words
@@ -213,26 +309,36 @@ def github_search_queries(query: str) -> list[str]:
             "verification",
         }
     )
-    queries = [focused, compact, "scientific claims calibration dataset", "llm hallucination dataset"]
+    queries = [
+        compact,
+        short_compact,
+        tail_compact,
+        focused,
+        f"{short_compact} benchmark",
+        f"{short_compact} open data",
+        f"{short_compact} public dataset",
+    ]
+    if focused:
+        queries.extend([f"{focused} benchmark", f"{focused} public dataset"])
     return [item for item in dict.fromkeys(q.strip() for q in queries) if item]
 
-
-def search_public_datasets(query: str, limit: int = 5) -> list[dict]:
+def search_public_datasets(query: str, limit: int = 12) -> list[dict]:
     sources = []
     sources.extend(search_github_public_datasets(query, limit=limit))
     sources.extend(search_huggingface_datasets(query, limit=limit))
     #sources.extend(search_uci_datasets(query, limit=limit))
     return sources
 
-
-def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
+def search_github_public_datasets(query: str, limit: int = 12) -> list[dict]:
     collected = []
     seen_urls = set()
 
     for github_query in github_search_queries(query):
-        results = search_github_repositories(github_query, limit=limit)
+        results = search_github_repositories(github_query, limit=max(limit * 2, 20))
         for result in results:
-            result["data_files"] = find_github_data_files(result, limit=10)
+            result["data_files"] = find_github_data_files(result, limit=25)
+            if not result["data_files"]:
+                continue
             result["csv_files"] = [
                 item for item in result["data_files"] if item.get("path", "").lower().endswith(".csv")
             ]
@@ -245,8 +351,7 @@ def search_github_public_datasets(query: str, limit: int = 5) -> list[dict]:
 
     return collected
 
-
-def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
+def search_github_repositories(query: str, limit: int = 20) -> list[dict]:
     try:
         response = requests.get(
             "https://api.github.com/search/repositories",
@@ -254,7 +359,7 @@ def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
                 "q": f"{query} dataset data in:description,readme",
                 "sort": "stars",
                 "order": "desc",
-                "per_page": limit,
+                "per_page": min(max(limit, 1), 50),
             },
             headers={
                 "Accept": "application/vnd.github+json",
@@ -283,7 +388,6 @@ def search_github_repositories(query: str, limit: int = 5) -> list[dict]:
         )
     return results
 
-
 def score_data_file_path(path: str) -> tuple[int, str]:
     lowered = path.lower()
     score = 0
@@ -301,6 +405,16 @@ def score_data_file_path(path: str) -> tuple[int, str]:
         score -= 1
     return score, path
 
+def looks_like_data_file_path(path: str) -> bool:
+    lowered = path.lower().split("?", 1)[0].rstrip(".,;")
+    if not lowered.endswith(SUPPORTED_DIRECT_DATA_SUFFIXES):
+        return False
+    if any(marker in lowered for marker in NON_DATA_FILE_MARKERS):
+        return False
+    name = lowered.rsplit("/", 1)[-1]
+    if name.startswith("."):
+        return False
+    return True
 
 def find_github_data_files(repo: dict, limit: int = 10) -> list[dict]:
     repo_name = repo.get("name")
@@ -325,7 +439,7 @@ def find_github_data_files(repo: dict, limit: int = 10) -> list[dict]:
     data_files = []
     for item in response.json().get("tree", []):
         path = item.get("path", "")
-        if item.get("type") == "blob" and path.lower().endswith(SUPPORTED_DIRECT_DATA_SUFFIXES):
+        if item.get("type") == "blob" and looks_like_data_file_path(path):
             data_files.append(
                 {
                     "path": path,
@@ -335,14 +449,13 @@ def find_github_data_files(repo: dict, limit: int = 10) -> list[dict]:
     data_files = sorted(data_files, key=lambda item: score_data_file_path(item.get("path", "")))
     return data_files[:limit]
 
-
-def search_huggingface_datasets(query: str, limit: int = 5) -> list[dict]:
+def search_huggingface_datasets(query: str, limit: int = 12) -> list[dict]:
     collected = []
     for hf_query in github_search_queries(query):
         try:
             response = requests.get(
                 "https://huggingface.co/api/datasets",
-                params={"search": hf_query, "limit": limit},
+                params={"search": hf_query, "limit": max(limit * 2, 20)},
                 headers={"User-Agent": "AutoResearch-Proposal-Agent"},
                 timeout=20,
             )
@@ -355,6 +468,9 @@ def search_huggingface_datasets(query: str, limit: int = 5) -> list[dict]:
             dataset_id = item.get("id")
             if not dataset_id:
                 continue
+            data_files = find_huggingface_data_files(dataset_id, limit=25)
+            if not data_files:
+                continue
             source = {
                 "source": "Hugging Face",
                 "name": dataset_id,
@@ -362,7 +478,7 @@ def search_huggingface_datasets(query: str, limit: int = 5) -> list[dict]:
                 "description": item.get("description") or "",
                 "downloads": item.get("downloads"),
                 "likes": item.get("likes"),
-                "data_files": find_huggingface_data_files(dataset_id, limit=10),
+                "data_files": data_files,
             }
             source["csv_files"] = [
                 item for item in source["data_files"] if item.get("path", "").lower().endswith(".csv")
@@ -372,7 +488,6 @@ def search_huggingface_datasets(query: str, limit: int = 5) -> list[dict]:
             if len(collected) >= limit:
                 return collected
     return collected
-
 
 def find_huggingface_data_files(dataset_id: str, limit: int = 10) -> list[dict]:
     try:
@@ -390,7 +505,7 @@ def find_huggingface_data_files(dataset_id: str, limit: int = 10) -> list[dict]:
     for item in response.json():
         path = item.get("path", "")
         item_type = item.get("type", "")
-        if item_type == "file" and path.lower().endswith(SUPPORTED_DIRECT_DATA_SUFFIXES):
+        if item_type == "file" and looks_like_data_file_path(path):
             data_files.append(
                 {
                     "path": path,
@@ -399,7 +514,6 @@ def find_huggingface_data_files(dataset_id: str, limit: int = 10) -> list[dict]:
             )
     data_files = sorted(data_files, key=lambda item: score_data_file_path(item.get("path", "")))
     return data_files[:limit]
-
 
 def search_uci_datasets(query: str, limit: int = 5) -> list[dict]:
     collected = []
@@ -437,28 +551,28 @@ def search_uci_datasets(query: str, limit: int = 5) -> list[dict]:
                 return collected
     return collected
 
-
 def format_public_sources_for_prompt(sources: list[dict]) -> str:
-    if not sources:
+    readable_sources = [
+        source for source in sources if source.get("data_files") or source.get("csv_files")
+    ]
+    if not readable_sources:
         return (
-            "No public dataset candidates were found automatically from GitHub, Hugging Face, or UCI. "
+            "No readable direct public dataset files were found automatically from GitHub, Hugging Face, or UCI. "
             "Any dataset required by the proposal must be marked TO_VERIFY."
         )
 
     lines = []
-    for index, source in enumerate(sources, 1):
-        data_files = source.get("data_files") or source.get("csv_files") or []
-        status = f"{source.get('source', 'Public source').upper().replace(' ', '_')}_CANDIDATE"
-        if data_files:
-            status = "DIRECT_DATA_FILE_CANDIDATE"
+    for index, source in enumerate(readable_sources[:15], 1):
+        data_files = (source.get("data_files") or source.get("csv_files") or [])[:12]
+        status = "DIRECT_DATA_FILE_CANDIDATE"
         data_file_lines = "\n".join(
             f"  - {item.get('raw_url')} (path: {item.get('path')})"
             for item in data_files
-        ) or "  - None found automatically; dataset_url must remain TO_VERIFY unless manually verified."
+        )
         lines.append(
             f"[{index}] {source.get('source')} dataset candidate: {source.get('name')}\n"
             f"URL: {source.get('url')}\n"
-            f"Important: URL above is a candidate page/repository, not an executable dataset unless direct files are listed below.\n"
+            f"Important: URL above is only provenance. The executable dataset inputs are the direct files listed below.\n"
             f"Description: {source.get('description') or 'N/A'}\n"
             f"Stars: {source.get('stars')}\n"
             f"Downloads: {source.get('downloads')}\n"
@@ -469,24 +583,17 @@ def format_public_sources_for_prompt(sources: list[dict]) -> str:
         )
     return "\n".join(lines)
 
-
 def direct_data_urls_from_sources_text(public_data_sources: str) -> list[str]:
     urls = re.findall(r"https?://[^\s)]+", public_data_sources)
     data_urls = []
     for url in urls:
         cleaned = url.rstrip(".,;")
-        if (
-            cleaned.lower().endswith(SUPPORTED_DIRECT_DATA_SUFFIXES)
-            or "raw.githubusercontent.com" in cleaned
-            or ("huggingface.co/datasets/" in cleaned and "/resolve/" in cleaned)
-        ):
+        if looks_like_data_file_path(cleaned):
             data_urls.append(cleaned)
     return list(dict.fromkeys(data_urls))
 
-
 def direct_csv_urls_from_sources_text(public_data_sources: str) -> list[str]:
     return [url for url in direct_data_urls_from_sources_text(public_data_sources) if url.lower().endswith(".csv")]
-
 
 def relevance_tokens(text: str) -> set[str]:
     return {
@@ -495,14 +602,20 @@ def relevance_tokens(text: str) -> set[str]:
         if token not in RELEVANCE_STOPWORDS and len(token) > 2
     }
 
+def domain_relevance_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in relevance_tokens(text)
+        if token not in GENERIC_ANALYSIS_TOKENS
+    }
 
 def source_blocks(public_data_sources: str) -> list[str]:
     blocks = re.split(r"(?m)^\[\d+\]\s+", public_data_sources)
     return [block.strip() for block in blocks if block.strip()]
 
-
 def relevant_direct_data_urls_from_sources_text(public_data_sources: str, context_text: str) -> list[str]:
     context_tokens = relevance_tokens(context_text)
+    context_domain_tokens = domain_relevance_tokens(context_text)
     relevant_urls = []
     for block in source_blocks(public_data_sources):
         urls = direct_data_urls_from_sources_text(block)
@@ -510,15 +623,35 @@ def relevant_direct_data_urls_from_sources_text(public_data_sources: str, contex
             continue
         block_tokens = relevance_tokens(block)
         overlap = context_tokens & block_tokens
-        has_named_overlap = any(
-            token in block.lower()
-            for token in context_tokens
-            if len(token) >= 5
-        )
-        if len(overlap) >= 2 or has_named_overlap:
+        domain_overlap = context_domain_tokens & domain_relevance_tokens(block)
+        if domain_overlap and len(overlap) >= 2:
             relevant_urls.extend(urls)
     return list(dict.fromkeys(relevant_urls))
 
+def proposal_section_text(text: str, heading: str) -> str:
+    upper_text = text.upper()
+    start = upper_text.find(heading)
+    if start == -1:
+        return ""
+    start += len(heading)
+    next_starts = [
+        upper_text.find(next_heading, start)
+        for next_heading in REQUIRED_PROPOSAL_SECTIONS
+        if next_heading != heading and upper_text.find(next_heading, start) != -1
+    ]
+    end = min(next_starts) if next_starts else len(text)
+    return text[start:end].strip()
+
+def proposal_relevance_context(text: str) -> str:
+    sections = [
+        proposal_section_text(text, "RESEARCH QUESTION:"),
+        proposal_section_text(text, "HYPOTHESIS:"),
+        proposal_section_text(text, "EXPERIMENT DESIGN:") or proposal_section_text(text, "DATA ANALYSIS DESIGN:"),
+        proposal_section_text(text, "METHODOLOGY:") or proposal_section_text(text, "ANALYSIS METHODOLOGY:"),
+        proposal_section_text(text, "KEY VARIABLES:"),
+    ]
+    context = "\n".join(section for section in sections if section)
+    return context or text[:2000]
 
 def read_agent_stream(request_id: str) -> str:
     headers = {
@@ -559,7 +692,6 @@ def read_agent_stream(request_id: str) -> str:
         raise RuntimeError("Proposal agent stream ended without returning text.")
     return full_response.strip()
 
-
 REQUIRED_PROPOSAL_SECTIONS = [
     "RESEARCH QUESTION:",
     "HYPOTHESIS:",
@@ -573,7 +705,6 @@ REQUIRED_PROPOSAL_SECTIONS = [
     "LIMITATIONS AND RISKS:",
     "EXPERIMENT EXECUTION SPEC:",
 ]
-
 
 def extract_execution_spec(text: str) -> dict | None:
     marker_index = text.upper().find("EXPERIMENT EXECUTION SPEC:")
@@ -610,7 +741,6 @@ def extract_execution_spec(text: str) -> dict | None:
                     return None
     return None
 
-
 def replace_execution_spec(text: str, spec: dict) -> str:
     marker = "EXPERIMENT EXECUTION SPEC:"
     marker_index = text.upper().find(marker)
@@ -646,7 +776,6 @@ def replace_execution_spec(text: str, spec: dict) -> str:
                 return text[:json_start] + replacement + text[index + 1 :]
     return text[:json_start] + replacement + "\n"
 
-
 def text_marks_dataset_as_unsuitable(text: str) -> bool:
     lowered = text.lower()
     return any(
@@ -661,11 +790,9 @@ def text_marks_dataset_as_unsuitable(text: str) -> bool:
         )
     )
 
-
 def valid_proposal_sections(text: str) -> bool:
     upper_text = text.upper()
     return all(section in upper_text for section in REQUIRED_PROPOSAL_SECTIONS)
-
 
 def validate_proposal_output(text: str, public_data_sources: str = "") -> tuple[bool, str]:
     if not text.strip():
@@ -698,7 +825,10 @@ def validate_proposal_output(text: str, public_data_sources: str = "") -> tuple[
     if str(spec.get("runner_type", "")).lower() == "universal_tabular_csv" and text_marks_dataset_as_unsuitable(text):
         return False, "EXPERIMENT EXECUTION SPEC uses an unsuitable smoke-test CSV as the primary dataset."
 
-    direct_data_urls = relevant_direct_data_urls_from_sources_text(public_data_sources, text)
+    direct_data_urls = relevant_direct_data_urls_from_sources_text(
+        public_data_sources,
+        proposal_relevance_context(text),
+    )
     all_direct_data_urls = direct_data_urls_from_sources_text(public_data_sources)
     if direct_data_urls and not text_marks_dataset_as_unsuitable(text):
         urls = spec.get("dataset_urls") if isinstance(spec.get("dataset_urls"), list) else []
@@ -727,7 +857,6 @@ def validate_proposal_output(text: str, public_data_sources: str = "") -> tuple[
         if unrelated_urls:
             return False, "EXPERIMENT EXECUTION SPEC uses direct data files that do not appear relevant to the proposal."
     return True, "ok"
-
 
 def local_data_execution_spec(
     public_data_sources: str,
@@ -780,19 +909,20 @@ def local_data_execution_spec(
         spec["dataset_name"] = "Direct public data file candidate"
     return spec
 
-
 def local_csv_execution_spec(public_data_sources: str, existing_spec: dict | None = None) -> dict | None:
     return local_data_execution_spec(public_data_sources, existing_spec)
-
 
 def locally_repair_execution_spec(text: str, public_data_sources: str) -> str | None:
     if text_marks_dataset_as_unsuitable(text):
         return None
-    spec = local_data_execution_spec(public_data_sources, extract_execution_spec(text), text)
+    spec = local_data_execution_spec(
+        public_data_sources,
+        extract_execution_spec(text),
+        proposal_relevance_context(text),
+    )
     if spec is None:
         return None
     return replace_execution_spec(text, spec)
-
 
 def repair_proposal_output(raw_output: str, research_question: str, deep_literature_review: str, public_data_sources: str, reason: str) -> str:
     repair_prompt = f"""
@@ -805,7 +935,7 @@ Rewrite it into the exact required format. Do not include commentary before or a
 If direct CSV URLs are listed and relevant, use runner_type universal_tabular_csv, task_type auto, target_column AUTO_TARGET, and feature_columns ["AUTO_NUMERIC"].
 If direct JSON/JSONL/TSV/ZIP data files are listed and relevant, use runner_type universal_data_file with task_type inspect, unless the experiment is clearly a relational event graph task.
 If the experiment is a relational event graph task with direct event files, use runner_type event_graph_classification.
-If the available files are only smoke tests or unrelated to the real experiment, use runner_type NEEDS_NEW_RUNNER and explain the needed runner.
+If the available files are only smoke tests or unrelated to the real data analysis, use runner_type NEEDS_NEW_RUNNER and explain the needed runner.
 Do not invent datasets, URLs, target columns, metrics, citations, or results.
 Do not use numeric citation markers. Convert any cited prior work to author-year format.
 
@@ -824,7 +954,6 @@ Invalid previous output:
 {raw_output}
 """
     return call_proposal_api(repair_prompt, label="Proposal repair")
-
 
 def call_proposal_api(user_input: str, label: str = "Proposal") -> str:
     headers = {
@@ -861,7 +990,6 @@ def call_proposal_api(user_input: str, label: str = "Proposal") -> str:
                 time.sleep(5 * attempt)
     raise RuntimeError(f"{label} API unavailable: {last_error}")
 
-
 def run_proposal_agent(
     research_question: str,
     deep_literature_review: str,
@@ -895,12 +1023,18 @@ def run_proposal_agent(
         repaired_is_valid, repaired_reason = validate_proposal_output(repaired, public_data_sources)
         if repaired_is_valid:
             return repaired
+        local_repair = locally_repair_execution_spec(repaired, public_data_sources)
+        if local_repair:
+            local_is_valid, local_reason = validate_proposal_output(local_repair, public_data_sources)
+            if local_is_valid:
+                print(f"Proposal repair output had an invalid execution spec; fixed it locally. Reason: {repaired_reason}")
+                return local_repair
+            print(f"Local repair after proposal repair was not enough. Reason: {local_reason}")
         print(f"Proposal repair still invalid; using structured fallback. Reason: {repaired_reason}")
         return fallback_proposal(research_question, repaired_reason, public_data_sources)
     except Exception as exc:
         print(f"Proposal repair failed; using structured fallback. Reason: {exc}")
         return fallback_proposal(research_question, f"{reason} Repair failed: {exc}", public_data_sources)
-
 
 def fallback_proposal(research_question: str, reason: str, public_data_sources: str = "") -> str:
     use_csv_fallback = (
@@ -933,7 +1067,7 @@ HYPOTHESIS:
 Proposal generation is pending because the live Proposal Agent was unavailable.
 
 EXPERIMENT DESIGN:
-Pending. The experiment must be designed from verified public datasets identified in the Deep Literature stage.
+Pending. The analysis must be designed from verified public datasets identified in the Deep Literature stage.
 
 PUBLIC DATA SOURCES:
 - TO_VERIFY: Public datasets named in the Deep Literature review must be verified before experiment execution.
@@ -942,7 +1076,7 @@ DATA COLLECTION PLAN:
 The Experiment Agent should retrieve only confirmed public datasets from prior work, Kaggle, Hugging Face Datasets, UCI, Papers With Code, arXiv-linked repositories, GitHub, or other legitimate public repositories.
 
 METHODOLOGY:
-Pending. Do not run or report an experiment until public data sources, baselines, metrics, and evaluation protocol are verified.
+Pending. Do not run or report a data analysis until public data sources, baselines, metrics, and evaluation protocol are verified.
 
 KEY VARIABLES:
 - Independent variables: TO_VERIFY
@@ -958,13 +1092,12 @@ FEASIBILITY CHECK:
 Fallback proposal only. Live proposal generation failed: {reason}
 
 LIMITATIONS AND RISKS:
-- The experiment design is not complete.
+- The data analysis design is not complete.
 - Dataset availability has not been verified.
 
 EXPERIMENT EXECUTION SPEC:
 {spec_text}
 """
-
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Designing experiment proposal...")
@@ -977,7 +1110,6 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
     except Exception as exc:
         print(f"Proposal failed; using placeholder. Reason: {exc}")
         return fallback_proposal(research_question, str(exc), public_sources_text)
-
 
 if __name__ == "__main__":
     question = input("Enter selected research question: ")
