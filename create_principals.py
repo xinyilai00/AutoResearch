@@ -38,6 +38,38 @@ PRINCIPALS = {
         "final-proposal-agent",
         "Principal for final proposal assembly stage",
     ),
+    "PAPER_PLANNER_PRINCIPAL_ID": (
+        "paper-planner-agent",
+        "Principal for paper planner stage",
+    ),
+    "PAPER_INTRO_PRINCIPAL_ID": (
+        "paper-intro-agent",
+        "Principal for introduction and abstract writing stage",
+    ),
+    "PAPER_LITREVIEW_PRINCIPAL_ID": (
+        "paper-litreview-agent",
+        "Principal for literature review writing stage",
+    ),
+    "PAPER_METHODOLOGY_PRINCIPAL_ID": (
+        "paper-methodology-agent",
+        "Principal for methodology writing stage",
+    ),
+    "PAPER_RESULTS_PRINCIPAL_ID": (
+        "paper-results-agent",
+        "Principal for results and discussion writing stage",
+    ),
+    "PAPER_CONCLUSION_PRINCIPAL_ID": (
+        "paper-conclusion-agent",
+        "Principal for conclusion writing stage",
+    ),
+    "PAPER_FINALIZATION_PRINCIPAL_ID": (
+        "paper-finalization-agent",
+        "Principal for paper assembly and finalization stage",
+    ),
+    "PAPER_REVIEW_PRINCIPAL_ID": (
+        "paper-review-agent",
+        "Principal for paper review and polish stage",
+    ),
 }
 
 
