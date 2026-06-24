@@ -265,7 +265,11 @@ Review this draft:
 
 
 def revise_draft(draft: str, review: Review) -> str:
-    prompt = f"""Revise this paper using the review.
+    prompt = f"""You are a strict paper revision agent.
+
+CRITICAL: Output the complete revised paper directly. Do not say "I will", "I'll", "Let me", "I'll systematically", or narrate your intentions in any way. Do not include any text before the paper title. Start immediately with the paper title as a Markdown H1 heading.
+
+Revise this paper using the review.
 
 Rules:
 - Output the complete revised paper, not a diff.
