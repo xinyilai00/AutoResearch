@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
 const PHASE_LABELS = ["Drafting paper...", "Polishing paper..."];
-const PHASE_DURATION_MS = 300000; // Switch label after 30s estimate
+const PHASE_DURATION_MS = 300000;
 
 export default function PaperPage({ autonomous, experimentOutput, paperOutput, onComplete }) {
-  const navigate = useNavigate();
   const [output, setOutput] = useState(paperOutput || "");
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!paperOutput);
@@ -18,13 +16,6 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
     setOutput(paperOutput || "");
     setDone(!!paperOutput);
   }, [paperOutput]);
-
-  useEffect(() => {
-    if (done && autonomous) {
-      const timer = setTimeout(() => navigate("/rebuttal"), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [done, autonomous]);
 
   useEffect(() => {
     return () => {
@@ -39,7 +30,6 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
     setError("");
     setPhaseIndex(0);
 
-    // Switch spinner label to phase 2 after PHASE_DURATION_MS
     phaseTimerRef.current = setTimeout(() => setPhaseIndex(1), PHASE_DURATION_MS);
 
     try {
@@ -100,12 +90,7 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
       )}
 
       {done && !autonomous && (
-        <>
-          <FeedbackBar onRerun={(feedback) => handleRun(feedback)} disabled={running} />
-          <button className="start-button" style={{ marginTop: "16px" }} onClick={() => navigate("/rebuttal")}>
-            Continue to Rebuttal →
-          </button>
-        </>
+        <FeedbackBar onRerun={(feedback) => handleRun(feedback)} disabled={running} />
       )}
 
       {done && autonomous && (

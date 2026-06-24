@@ -8,10 +8,6 @@ import DeepLiteraturePage from "./pages/DeepLiteraturePage.jsx";
 import ProposalPage from "./pages/ProposalPage.jsx";
 import ExperimentPage from "./pages/ExperimentPage.jsx";
 import PaperPage from "./pages/PaperPage.jsx";
-import RebuttalPage from "./pages/RebuttalPage.jsx";
-import CitationsPage from "./pages/CitationsPage.jsx";
-import FilesPage from "./pages/FilesPage.jsx";
-import SubmissionPage from "./pages/SubmissionPage.jsx";
 import "./styles/app.css";
 
 const stages = [
@@ -22,10 +18,6 @@ const stages = [
   { label: "Proposal", path: "/proposal" },
   { label: "Experiment", path: "/experiment" },
   { label: "Paper", path: "/paper" },
-  { label: "Rebuttal", path: "/rebuttal" },
-  { label: "Citations", path: "/citations" },
-  { label: "Files", path: "/files" },
-  { label: "Submission", path: "/submission" },
 ];
 
 const PIPELINE_STAGES = [
@@ -35,10 +27,40 @@ const PIPELINE_STAGES = [
   "/proposal",
   "/experiment",
   "/paper",
-  "/rebuttal",
 ];
 
-function Sidebar() {
+function DownloadModal({ onClose }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Download Paper</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <p className="modal-subtitle">Choose a format to download your paper.</p>
+        <div className="modal-options">
+          <button className="modal-option-btn">
+            <span className="modal-option-icon">📄</span>
+            <span className="modal-option-label">PDF</span>
+            <span className="modal-option-desc">Best for sharing and printing</span>
+          </button>
+          <button className="modal-option-btn">
+            <span className="modal-option-icon">📝</span>
+            <span className="modal-option-label">DOCX</span>
+            <span className="modal-option-desc">Editable in Microsoft Word</span>
+          </button>
+          <button className="modal-option-btn">
+            <span className="modal-option-icon">📐</span>
+            <span className="modal-option-label">LaTex</span>
+            <span className="modal-option-desc">For conference and journal submission</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ onDownloadClick }) {
   return (
     <nav className="sidebar">
       <div className="sidebar-title">Auto-Scientist</div>
@@ -57,18 +79,23 @@ function Sidebar() {
           </li>
         ))}
       </ul>
+      <div className="sidebar-bottom">
+        <button className="download-btn" onClick={onDownloadClick}>
+          Download Paper
+        </button>
+      </div>
     </nav>
   );
 }
 
-function Layout({ children }) {
+function Layout({ children, onDownloadClick }) {
   const location = useLocation();
   const stageIndex = PIPELINE_STAGES.indexOf(location.pathname);
   const isStage = stageIndex !== -1;
 
   return (
     <div className="layout">
-      <Sidebar />
+      <Sidebar onDownloadClick={onDownloadClick} />
       <main className="content">
         {isStage && (
           <>
@@ -101,6 +128,7 @@ function App() {
   const [proposalOutput, setProposalOutput] = useState("");
   const [experimentOutput, setExperimentOutput] = useState("");
   const [paperOutput, setPaperOutput] = useState("");
+  const [showDownload, setShowDownload] = useState(false);
 
   function completeLitOutput(output) {
     setLitOutput(output);
@@ -140,7 +168,7 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Layout>
+      <Layout onDownloadClick={() => setShowDownload(true)}>
         <Routes>
           <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
           <Route path="/topic" element={
@@ -195,11 +223,8 @@ function App() {
               onComplete={setPaperOutput}
             />}
           />
-          <Route path="/rebuttal" element={<RebuttalPage autonomous={autonomous} paperOutput={paperOutput} />} />
-          <Route path="/citations" element={<CitationsPage autonomous={autonomous} />} />
-          <Route path="/files" element={<FilesPage autonomous={autonomous} />} />
-          <Route path="/submission" element={<SubmissionPage autonomous={autonomous} />} />
         </Routes>
+        {showDownload && <DownloadModal onClose={() => setShowDownload(false)} />}
       </Layout>
     </BrowserRouter>
   );

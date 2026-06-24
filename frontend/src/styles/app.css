@@ -334,3 +334,120 @@ body {
 .stage-pip.active {
   background: #3e3882;
 }
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 16px;
+}
+
+.download-btn {
+  width: 100%;
+  background: #534AB7;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 16px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s;
+}
+
+.download-btn:hover {
+  background: #3C3489;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px;
+  width: 400px;
+  max-width: 90vw;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #111;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #888;
+}
+
+.modal-close:hover {
+  color: #111;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 20px;
+}
+
+.modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.modal-option-btn:hover {
+  border-color: #534AB7;
+  background: #EEEDFE;
+}
+
+.modal-option-icon {
+  font-size: 20px;
+}
+
+.modal-option-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #111;
+  flex: 1;
+}
+
+.modal-option-desc {
+  font-size: 12px;
+  color: #888;
+}
