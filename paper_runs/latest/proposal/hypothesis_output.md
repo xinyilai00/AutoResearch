@@ -1,21 +1,20 @@
 RESEARCH QUESTION:
 How do the lyrical themes of Drake and Kendrick Lamar differ in their treatment of race, masculinity, and emotional vulnerability, and to what extent do these thematic differences correspond to distinct patterns of engagement and sentiment among self-identified white teenage users on public social media platforms such as Reddit and Twitter?
 
-
 HYPOTHESIS:
 Kendrick Lamar's discography exhibits significantly higher prevalence of systemic-race and collective-identity themes, whereas Drake's discography exhibits significantly higher prevalence of individualized emotional vulnerability and relational masculinity themes; furthermore, these thematic divergences correspond to measurably distinct reception patterns among self-identified white teenage social media users, such that Drake's content generates higher aggregate positive sentiment scores and greater engagement volume (upvotes, replies, shares) from this demographic, while Kendrick Lamar's content generates lower engagement volume but higher thematic-depth discourse (longer comment threads, greater use of sociopolitical vocabulary) among the same population.
 
-EXPERIMENT DESIGN:
+ANALYSIS GOAL:
 The analysis must determine (1) whether a systematic, replicable quantitative comparison of Drake's and Kendrick Lamar's lyrical corpora confirms statistically significant differences in the prevalence and framing of race, masculinity, and emotional vulnerability themes; (2) whether self-identified white teenage users on Reddit and Twitter/X exhibit measurably different sentiment distributions, engagement intensities, and discursive framing patterns when responding to content associated with each artist; and (3) whether specific lyrical theme categories (e.g., systemic racism critique, interpersonal vulnerability, hegemonic vs. alternative masculinity) can be statistically linked to corresponding patterns in audience engagement metrics and sentiment polarity, thereby establishing a correlational — though not causal — relationship between thematic content and cross-demographic reception.
 
-PUBLIC DATA SOURCES:
-- TO_VERIFY: No readable direct dataset files were found automatically.
-
-DATA COLLECTION PLAN:
-The Dataset Agent searched for readable public files and discarded repositories, pages, model artifacts, config files, and unreadable URLs. The Schema Agent inspected the selected direct files when possible. The Experiment Agent should use only the direct dataset URLs in the execution spec.
-
-METHODOLOGY:
-Use the selected public data files, schema-inspected target candidates, and the runner specified in EXPERIMENT EXECUTION SPEC. If the target column is AUTO_TARGET or TO_VERIFY, the Experiment Agent may infer a target from loaded tabular data and report that inference in the results.
+REQUIRED DATA CHARACTERISTICS:
+- **Lyrical corpus**: Complete studio album discographies of both Drake and Kendrick Lamar (minimum: all major-label studio albums through 2024), with full lyrical text available in machine-readable format, including song titles, album identifiers, and release dates.
+- **Thematic annotation schema**: A validated or researcher-constructed coding scheme with clearly defined categories for (a) race-related content (individual vs. systemic framing, racial pride, racial injustice), (b) masculinity constructs (hegemonic, vulnerable, performative, relational), and (c) emotional vulnerability (self-disclosure of sadness, anxiety, insecurity, interpersonal conflict). Inter-coder reliability metrics (Cohen's kappa >= 0.70) must be achievable.
+- **Social media data — Reddit**: Publicly accessible posts and comments from relevant subreddits (e.g., r/hiphopheads, r/Drake, r/KendrickLamar, r/teenagers, r/Music) containing references to Drake or Kendrick Lamar, with available metadata including author username, post/comment text, upvote/downvote counts, timestamps, and thread depth. Data must span a sufficient time window (minimum 24 months) to capture engagement trends across multiple album releases or cultural events (e.g., the 2024 Drake-Kendrick Lamar conflict documented by Linscott, 2025).
+- **Social media data — Twitter/X**: Public tweets and replies mentioning Drake or Kendrick Lamar, with available metadata including author handle, tweet text, like/retweet/reply counts, and timestamps, over the same time window.
+- **Demographic identification signal**: A method for identifying self-identified white teenage users (ages 13–19) through explicit self-disclosure in user bios, profile descriptions, subreddit flair, or post content (e.g., "17M" conventions on r/teenagers, age/race self-reports in comments). The dataset must contain a sufficient sample of such users (minimum N = 200 unique identifiable users across platforms) to enable statistical comparison.
+- **Sentiment analysis capability**: An NLP pipeline capable of assigning sentiment polarity scores (positive, negative, neutral) and emotion classifications (joy, anger, sadness, fear, disgust) to social media text at the post/comment level, with validated accuracy on informal social media language.
+- **Temporal alignment**: Lyrical release dates must be alignable with social media engagement timestamps to enable event-study or time-series analysis of audience response to specific songs, albums, or public events.
 
 KEY VARIABLES:
 - **Independent variables**:
@@ -45,27 +44,3 @@ SUCCESS CRITERIA:
 - **Thematic discourse criterion**: Kendrick Lamar-associated threads exhibit significantly greater mean comment length and higher frequency of sociopolitical vocabulary (p < 0.05) compared to Drake-associated threads among the same demographic, indicating deeper thematic engagement despite lower raw engagement volume.
 - **Correlation criterion**: A Spearman or Pearson correlation analysis between lyrical theme intensity scores and corresponding social media engagement/sentiment metrics yields at least two statistically significant correlations (p < 0.05, |r| >= 0.30) across the thematic axes, establishing a meaningful associative link between specific lyrical content and audience response patterns.
 - **Robustness criterion**: The above findings hold after controlling for platform, community context, temporal proximity to release events, and baseline song popularity, as confirmed through multivariate regression or stratified analysis.
-
-FEASIBILITY CHECK:
-The analysis is feasible only to the extent that the listed direct files are readable and contain columns relevant to the hypothesis. If the execution spec uses NEEDS_NEW_RUNNER, the current Experiment Agent should inspect any readable files and report why the full analysis cannot run.
-
-LIMITATIONS AND RISKS:
-- Dataset search may miss sources that require credentials or manual download.
-- Schema inference can select an imperfect target column when metadata is weak.
-- A simple baseline runner cannot replace custom feature engineering, scraping, deep learning, causal inference, or multimodal processing.
-
-EXPERIMENT EXECUTION SPEC:
-{
-  "runner_type": "NEEDS_NEW_RUNNER",
-  "task_type": "comparative_thematic_and_audience_analysis",
-  "dataset_url": "TO_VERIFY",
-  "dataset_urls": [],
-  "dataset_name": "TO_VERIFY",
-  "target_column": "TO_VERIFY",
-  "feature_columns": [],
-  "baseline": "TO_VERIFY",
-  "success_metric": "TO_VERIFY",
-  "success_threshold": 0.0,
-  "threshold_direction": "TO_VERIFY",
-  "notes_for_experiment_agent": "No datasets were located by the Dataset Agent (candidate_count = 0), and no files were loaded or inspected by the Schema Agent (files_loaded = 0, rows_loaded = 0). The hypothesis requires at minimum: (1) complete machine-readable lyrical corpora for Drake and Kendrick Lamar's studio discographies through 2024; (2) public Reddit posts/comments from subreddits such as r/hiphopheads, r/Drake, r/KendrickLamar, r/teenagers, and r/Music spanning at least 24 months with metadata (author, text, scores, timestamps, thread depth); (3) public Twitter/X tweets and replies mentioning either artist with engagement metadata over the same window; (4) a validated thematic annotation schema covering race, masculinity, and emotional vulnerability categories with achievable inter-coder reliability (Cohen's kappa >= 0.70); (5) a demographic identification method for self-identified white teenage users (ages 13-19, minimum N=200 unique users) via bios, flairs, or self-disclosure conventions; and (6) an NLP sentiment analysis pipeline validated on informal social media language. None of these data sources are currently available in the pipeline. A new runner must be configured with appropriate data acquisition capabilities \u2014 including web scraping or API access for Reddit (via Pushshift/PMAW or Reddit API), Twitter/X (via academic or enterprise API), and a lyrics database (e.g., Genius API, Musixmatch, or pre-compiled lyrical datasets) \u2014 before this experiment can proceed. Additionally, the runner will need NLP tooling for thematic coding, sentiment classification, and sociopolitical vocabulary detection."
-}
