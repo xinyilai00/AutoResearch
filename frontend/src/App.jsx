@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import TopicLiteraturePage from "./pages/TopicLiteraturePage.jsx";
 import ResearchQuestionPage from "./pages/ResearchQuestionPage.jsx";
@@ -28,6 +28,16 @@ const stages = [
   { label: "Submission", path: "/submission" },
 ];
 
+const PIPELINE_STAGES = [
+  "/topic",
+  "/research-question",
+  "/deep-literature",
+  "/proposal",
+  "/experiment",
+  "/paper",
+  "/rebuttal",
+];
+
 function Sidebar() {
   return (
     <nav className="sidebar">
@@ -52,10 +62,31 @@ function Sidebar() {
 }
 
 function Layout({ children }) {
+  const location = useLocation();
+  const stageIndex = PIPELINE_STAGES.indexOf(location.pathname);
+  const isStage = stageIndex !== -1;
+
   return (
     <div className="layout">
       <Sidebar />
-      <main className="content">{children}</main>
+      <main className="content">
+        {isStage && (
+          <>
+            <div className="stage-progress">
+              {PIPELINE_STAGES.map((_, i) => (
+                <div
+                  key={i}
+                  className={`stage-pip ${i < stageIndex ? "done" : i === stageIndex ? "active" : ""}`}
+                />
+              ))}
+            </div>
+            <div className="stage-counter">
+              Stage {stageIndex + 1} of {PIPELINE_STAGES.length}
+            </div>
+          </>
+        )}
+        {children}
+      </main>
     </div>
   );
 }
