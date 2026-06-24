@@ -1105,17 +1105,17 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
 
     try:
         try:
-            from .hypothesis_agent import run_hypothesis_agent
-            from .dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
-            from .schema_agent import run_schema_agent
-            from .analysis_agent import run_analysis_agent
-            from .final_agent_prop import run_final_agent_prop
+            from .proposal.hypothesis_agent import run_hypothesis_agent
+            from .proposal.dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
+            from .proposal.schema_agent import run_schema_agent
+            from .proposal.analysis_agent import run_analysis_agent
+            from .proposal.final_agent_prop import run_final_agent_prop
         except ImportError:
-            from hypothesis_agent import run_hypothesis_agent
-            from dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
-            from schema_agent import run_schema_agent
-            from analysis_agent import run_analysis_agent
-            from final_agent_prop import run_final_agent_prop
+            from proposal.hypothesis_agent import run_hypothesis_agent
+            from proposal.dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
+            from proposal.schema_agent import run_schema_agent
+            from proposal.analysis_agent import run_analysis_agent
+            from proposal.final_agent_prop import run_final_agent_prop
 
         proposal_dir = Path("paper_runs/latest/proposal")
         proposal_dir.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 try:
-    from . import proposal_agent
+    from .. import proposal_agent
 except ImportError:
     import proposal_agent
 
