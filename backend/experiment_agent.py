@@ -4,11 +4,13 @@ import csv
 import datetime as dt
 import json
 import math
+import os
 import re
 import statistics
 import urllib.parse
 import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -82,6 +84,67 @@ def extract_execution_spec(proposal: str) -> dict:
                 return json.loads(text[start : position + 1])
 
     raise ValueError("Execution spec JSON object is incomplete.")
+
+
+def run_parallel_experiment_agents(spec: dict, proposal: str, output_dir: Path) -> dict:
+    try:
+        try:
+            from .experiment.data_agent import run_data_agent
+            from .experiment.schema_agent import run_schema_agent
+            from .experiment.method_agent import run_method_agent
+            from .experiment.risk_agent import run_risk_agent
+        except ImportError:
+            from experiment.data_agent import run_data_agent
+            from experiment.schema_agent import run_schema_agent
+            from experiment.method_agent import run_method_agent
+            from experiment.risk_agent import run_risk_agent
+
+        checks = {}
+        agents = {
+            "data": run_data_agent,
+            "schema": run_schema_agent,
+            "method": run_method_agent,
+            "risk": run_risk_agent,
+        }
+        print("[Experiment Agent] Running experiment check agents in parallel...")
+        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
+            future_to_name = {
+                executor.submit(agent_fn, spec, proposal): name
+                for name, agent_fn in agents.items()
+            }
+            for future in as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    checks[name] = future.result()
+                except Exception as exc:
+                    checks[name] = {
+                        "agent": name,
+                        "ready": False,
+                        "issues": [str(exc)],
+                    }
+
+        report = {
+            "ready": all(bool(check.get("ready")) for check in checks.values()),
+            "checks": checks,
+        }
+        if os.getenv("WRITE_EXPERIMENT_CHECKS", "").lower() == "true":
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "experiment_agent_checks.json").write_text(
+                json.dumps(report, indent=2),
+                encoding="utf-8",
+            )
+        return report
+    except Exception as exc:
+        return {
+            "ready": False,
+            "checks": {
+                "parallel_agents": {
+                    "agent": "parallel_agents",
+                    "ready": False,
+                    "issues": [str(exc)],
+                }
+            },
+        }
 
 
 SUPPORTED_RUNNER_TYPES = {
@@ -1118,6 +1181,8 @@ def run_experiment_stage(
         spec = extract_execution_spec(proposal)
     except Exception as exc:
         return redesign_result(proposal, output_path, str(exc))
+
+    run_parallel_experiment_agents(spec, proposal, output_path)
 
     redesign_reason = needs_redesign(spec)
     if redesign_reason:

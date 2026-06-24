@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -1120,11 +1121,25 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
         proposal_dir = Path("paper_runs/latest/proposal")
         proposal_dir.mkdir(parents=True, exist_ok=True)
 
-        print("[Proposal Agent] Running Hypothesis Agent...")
-        hypothesis_output = run_hypothesis_agent(research_question, deep_literature_text)
+        print("[Proposal Agent] Running Hypothesis Agent and Dataset Agent in parallel...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            hypothesis_future = executor.submit(
+                run_hypothesis_agent,
+                research_question,
+                deep_literature_text,
+            )
+            dataset_future = executor.submit(
+                run_dataset_agent,
+                research_question,
+                proposal_dir / "dataset",
+            )
+
+            hypothesis_output = hypothesis_future.result()
+            dataset_report = dataset_future.result()
+
         (proposal_dir / "hypothesis_output.md").write_text(hypothesis_output, encoding="utf-8")
 
-        dataset_report = run_dataset_agent(research_question, proposal_dir / "dataset")
+        print("[Proposal Agent] Running Schema Agent...")
         schema_report = run_schema_agent(dataset_report, proposal_dir / "schema")
 
         print("[Proposal Agent] Running Analysis Agent...")
