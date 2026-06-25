@@ -11,4 +11,7 @@ build/
 .venv/
 venv/
 env/
-.env
+.envnode_modules/
+frontend/dist/
+paper_runs/
+frontend/node_modules/
