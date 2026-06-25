@@ -737,20 +737,57 @@ def inspected_repo_score(repo: dict, repo_inspection: dict, research_question: s
 
 
 def select_and_clone_repo(repos: list[dict], research_question: str) -> tuple[dict, Path | None, dict]:
-    last_repo = {}
-    last_path = None
-    last_inspection = {"available": False, "reason": "No repository candidates were found."}
-    max_attempts = int(os.getenv("MAX_GIT_CLONE_ATTEMPTS", str(DEFAULT_MAX_CLONE_ATTEMPTS)))
-    inspected = []
-    for repo in repos[:max_attempts]:
-        repo_path = clone_repo(repo)
-        repo_inspection = inspect_repo(repo_path)
-        last_repo, last_path, last_inspection = repo, repo_path, repo_inspection
-        if repo_is_useful(repo_inspection):
-            inspected.append((repo, repo_path, repo_inspection))
-    if inspected:
-        return max(inspected, key=lambda item: inspected_repo_score(item[0], item[2], research_question))
-    return last_repo, last_path, last_inspection
+    if not repos:
+        return {}, None, {"available": False, "reason": "No repository candidates were found."}
+
+    repo = repos[0]
+    repo_path = clone_repo(repo)
+    repo_inspection = inspect_repo(repo_path)
+    if repo_is_useful(repo_inspection) and inspected_repo_score(repo, repo_inspection, research_question) >= 0:
+        return repo, repo_path, repo_inspection
+
+    if repo_inspection.get("available"):
+        repo_inspection["reason"] = "Top-ranked repository was cloned but did not contain a relevant benchmark."
+    return repo, repo_path, repo_inspection
+
+
+def short_description(text: str, limit: int = 180) -> str:
+    cleaned = " ".join(str(text or "").split())
+    return cleaned[:limit] + ("..." if len(cleaned) > limit else "")
+
+
+def display_repo(repo: dict) -> dict:
+    if not repo:
+        return {"status": "NO_REPO_FOUND"}
+    return {
+        "name": repo.get("name", ""),
+        "url": repo.get("url", ""),
+        "description": short_description(repo.get("description", "")),
+        "stars": repo.get("stars", 0),
+        "language": repo.get("language", ""),
+        "search_query": repo.get("search_query", ""),
+    }
+
+
+def display_repo_candidates(repos: list[dict], limit: int = 5) -> list[dict]:
+    return [display_repo(repo) for repo in repos[:limit]]
+
+
+def display_repo_inspection(repo_inspection: dict) -> dict:
+    if not repo_inspection.get("available"):
+        return repo_inspection
+    return {
+        "available": True,
+        "selection_confidence": repo_inspection.get("selection_confidence", "low"),
+        "benchmark_file_count": len(repo_inspection.get("benchmark_files", [])),
+        "data_file_count": len(repo_inspection.get("repo_data_files", [])),
+        "dataset_url_count": len(repo_inspection.get("dataset_urls", [])),
+        "data_source_url_count": len(repo_inspection.get("data_source_urls", [])),
+        "benchmark_files": repo_inspection.get("benchmark_files", [])[:5],
+        "repo_data_files": repo_inspection.get("repo_data_files", [])[:5],
+        "data_source_urls": repo_inspection.get("data_source_urls", [])[:5],
+        "metrics": repo_inspection.get("metrics", []),
+    }
 
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
@@ -806,6 +843,9 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
         "repo_data_files": repo_inspection.get("repo_data_files", []),
         "selection_confidence": selection_confidence,
     }
+    selected_repo_display = display_repo(repo)
+    candidate_display = display_repo_candidates(repos)
+    inspection_display = display_repo_inspection(repo_inspection)
 
     return f"""RESEARCH QUESTION:
 {research_question}
@@ -852,13 +892,13 @@ LIMITATIONS AND RISKS:
 - If the repository lacks clear metrics or dataset documentation, the experiment may only produce a replication plan.
 
 SELECTED GITHUB REPOSITORY:
-{json.dumps(repo or {"status": "NO_REPO_FOUND"}, indent=2)}
+{json.dumps(selected_repo_display, indent=2)}
 
 GITHUB CANDIDATES CONSIDERED:
-{json.dumps(repos[:5], indent=2)}
+{json.dumps(candidate_display, indent=2)}
 
 REPOSITORY INSPECTION:
-{json.dumps(repo_inspection, indent=2)}
+{json.dumps(inspection_display, indent=2)}
 
 DATASET DECISION:
 {json.dumps(dataset_choice, indent=2)}
