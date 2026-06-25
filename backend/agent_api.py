@@ -63,6 +63,7 @@ def read_agent_stream(request_id: str, principal_id: str) -> str:
     response.raise_for_status()
 
     full = ""
+    completed = False
     for line in response.iter_lines(decode_unicode=True):
         if not line or not line.startswith("data:"):
             continue
@@ -75,9 +76,12 @@ def read_agent_stream(request_id: str, principal_id: str) -> str:
         if event_type in {"TEXT_START", "TEXT_DELTA"}:
             full += data.get("data", {}).get("text", "")
         if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
-            if full.strip():
-                break
+            completed = True
+            break  # always break on completion, don't wait for more
 
     if not full.strip():
-        raise RuntimeError("Agent stream ended without returning text.")
+        raise RuntimeError(
+            "Agent stream ended without returning text."
+            + (" (completion event received)" if completed else " (stream closed with no completion event)")
+        )
     return full.strip()
