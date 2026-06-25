@@ -114,7 +114,7 @@ def dataset_context(dataset_report: dict) -> str:
     return "\n".join(parts)
 
 
-def flatten_dataset_urls(dataset_report: dict, limit: int = 5) -> list[str]:
+def flatten_dataset_urls(dataset_report: dict, limit: int = 3) -> list[str]:
     urls = []
     for candidate in dataset_report.get("dataset_candidates", []):
         for item in candidate.get("direct_files", []):
@@ -151,6 +151,39 @@ def target_candidates(columns: list[str], context: str = "") -> list[str]:
     return list(dict.fromkeys(column for _, column in scored))
 
 
+def column_profiles_for_rows(rows: list[dict], source_file: str, columns: list[str]) -> dict:
+    file_name = Path(source_file).name
+    matching_rows = [
+        row
+        for row in rows
+        if Path(str(row.get("source_file", ""))).name == file_name
+    ]
+    if not matching_rows:
+        matching_rows = rows[:500]
+    else:
+        matching_rows = matching_rows[:500]
+
+    profiles = {}
+    for column in columns[:80]:
+        values = [str(row.get(column, "")).strip() for row in matching_rows if str(row.get(column, "")).strip()]
+        sample = values[:5]
+        unique_count = len(set(values))
+        numeric_count = 0
+        for value in values:
+            try:
+                float(value)
+                numeric_count += 1
+            except ValueError:
+                pass
+        profiles[column] = {
+            "non_empty": len(values),
+            "unique_count": unique_count,
+            "numeric_fraction": round(numeric_count / len(values), 3) if values else 0.0,
+            "sample_values": sample,
+        }
+    return profiles
+
+
 def inspect_dataset_urls(dataset_urls: list[str], output_dir: str | Path, context: str = "") -> dict:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -182,6 +215,7 @@ def inspect_dataset_urls(dataset_urls: list[str], output_dir: str | Path, contex
                 "rows": item.get("rows"),
                 "columns": columns,
                 "target_candidates": target_candidates(columns, context),
+                "column_profiles": column_profiles_for_rows(rows, str(item.get("file", "")), columns),
             }
         )
 
