@@ -49,7 +49,7 @@ def dataset_report_to_prompt_text(report: dict) -> str:
     return "\n".join(lines)
 
 
-def run_dataset_agent(research_question: str, output_dir: str | Path | None = None, limit: int = 12) -> dict:
+def run_dataset_agent(research_question: str, output_dir: str | Path | None = None, limit: int = 5) -> dict:
     print("[Dataset Agent] Searching readable public dataset files...")
     sources = proposal_agent.search_public_datasets(research_question, limit=limit)
     report = build_dataset_report(sources)
@@ -66,7 +66,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Find readable public dataset files.")
     parser.add_argument("research_question")
     parser.add_argument("--out", default="paper_runs/latest/proposal/dataset")
-    parser.add_argument("--limit", type=int, default=12)
+    parser.add_argument("--limit", type=int, default=5)
     return parser.parse_args()
 
 

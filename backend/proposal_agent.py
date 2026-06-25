@@ -92,7 +92,7 @@ EXPERIMENT EXECUTION SPEC:
   "feature_columns": ["column name or AUTO_NUMERIC"],
   "baseline": "majority_class for classification or mean_prediction for regression",
   "success_metric": "accuracy, mae, rmse, or r2",
-  "success_threshold": 0.0,
+  "success_threshold": "0.55 for accuracy/classification, 0.05 for r2/regression, or 1.0 for inspect-only",
   "threshold_direction": "greater_or_equal or less_or_equal",
   "notes_for_experiment_agent": "specific instructions for loading and evaluating the dataset"
 }
@@ -914,7 +914,7 @@ def local_data_execution_spec(
             "feature_columns": ["AUTO_NUMERIC"] if runner_type != "event_graph_classification" else ["AUTO_GRAPH_FEATURES"],
             "baseline": "majority_class for classification or mean_prediction for regression",
             "success_metric": "accuracy" if runner_type != "universal_data_file" else "inspect",
-            "success_threshold": 0.0,
+            "success_threshold": 0.55 if runner_type != "universal_data_file" else 1.0,
             "threshold_direction": "greater_or_equal",
             "notes_for_experiment_agent": (
                 "Direct data file candidates were found by the Proposal stage. "
@@ -1072,7 +1072,7 @@ def fallback_proposal(research_question: str, reason: str, public_data_sources: 
             "feature_columns": ["TO_VERIFY"],
             "baseline": "TO_VERIFY",
             "success_metric": "TO_VERIFY",
-            "success_threshold": 0.0,
+            "success_threshold": 1.0,
             "threshold_direction": "TO_VERIFY",
             "notes_for_experiment_agent": "Proposal generation failed or requires a custom runner before execution.",
         }
@@ -1126,12 +1126,14 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
             from .proposal.hypothesis_agent import run_hypothesis_agent
             from .proposal.dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
             from .proposal.schema_agent import run_schema_agent
+            from .proposal.target_agent import run_target_agent
             from .proposal.analysis_agent import run_analysis_agent
             from .proposal.final_agent_prop import run_final_agent_prop
         except ImportError:
             from proposal.hypothesis_agent import run_hypothesis_agent
             from proposal.dataset_agent import dataset_report_to_prompt_text, run_dataset_agent
             from proposal.schema_agent import run_schema_agent
+            from proposal.target_agent import run_target_agent
             from proposal.analysis_agent import run_analysis_agent
             from proposal.final_agent_prop import run_final_agent_prop
 
@@ -1151,18 +1153,24 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
             research_question,
         )
 
-        print("[Proposal Agent] Running Hypothesis Agent with dataset/schema context...")
+        print("[Proposal Agent] Running Target Agent...")
+        target_packet = run_target_agent(research_question, dataset_report, schema_report)
+        if write_debug_outputs:
+            (proposal_dir / "target_packet.json").write_text(json.dumps(target_packet, indent=2), encoding="utf-8")
+
+        print("[Proposal Agent] Running Hypothesis Agent with target context...")
         hypothesis_output = run_hypothesis_agent(
             research_question,
             deep_literature_text,
             dataset_report,
             schema_report,
+            target_packet,
         )
         if write_debug_outputs:
             (proposal_dir / "hypothesis_output.md").write_text(hypothesis_output, encoding="utf-8")
 
         print("[Proposal Agent] Running Analysis Agent...")
-        analysis_spec = run_analysis_agent(hypothesis_output, dataset_report, schema_report)
+        analysis_spec = run_analysis_agent(hypothesis_output, dataset_report, schema_report, target_packet)
         if write_debug_outputs:
             (proposal_dir / "analysis_spec.json").write_text(json.dumps(analysis_spec, indent=2), encoding="utf-8")
 
@@ -1172,6 +1180,7 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
             dataset_report,
             schema_report,
             analysis_spec,
+            target_packet,
         )
         if write_debug_outputs:
             (proposal_dir / "final_proposal.md").write_text(final_proposal, encoding="utf-8")
