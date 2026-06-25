@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -64,17 +65,40 @@ def list_existing(paths: list[str]) -> list[str]:
     return [path for path in paths if path and Path(path).exists()]
 
 
-def benchmark_command(repo_path: Path, entrypoints: list[str]) -> list[str] | None:
-    for entrypoint in entrypoints:
+def question_keywords(text: str) -> set[str]:
+    stop = {"can", "does", "the", "and", "over", "with", "from", "using", "dataset", "improve"}
+    return {word for word in re.findall(r"[a-z0-9_+-]{3,}", text.lower()) if word not in stop}
+
+
+def entrypoint_score(entrypoint: str, research_question: str) -> int:
+    haystack = entrypoint.lower().replace("_", " ").replace("-", " ")
+    keywords = question_keywords(research_question)
+    score = sum(25 for keyword in keywords if keyword in haystack)
+    if "random forest" in research_question.lower() and "random" in haystack and "forest" in haystack:
+        score += 200
+    if "logistic regression" in research_question.lower() and "logistic" in haystack:
+        score += 160
+    if "iris" in research_question.lower() and "iris" in haystack:
+        score += 160
+    if "template" in haystack or "untitled" in haystack:
+        score -= 60
+    if "kernel svm" in haystack and "svm" not in keywords:
+        score -= 40
+    return score
+
+
+def benchmark_command(repo_path: Path, entrypoints: list[str], research_question: str = "") -> tuple[list[str], Path] | None:
+    ranked = sorted(entrypoints, key=lambda item: entrypoint_score(item, research_question), reverse=True)
+    for entrypoint in ranked:
         candidate = repo_path / entrypoint
         if not candidate.exists():
             continue
         if candidate.suffix == ".py":
-            return ["python", str(candidate)]
+            return [sys.executable, candidate.name], candidate.parent
         if candidate.suffix == ".sh":
-            return ["bash", str(candidate)]
+            return ["bash", candidate.name], candidate.parent
         if candidate.suffix.lower() == ".r":
-            return ["Rscript", str(candidate)]
+            return ["Rscript", candidate.name], candidate.parent
     return None
 
 
@@ -221,17 +245,28 @@ def prepare_replication_branch(repo_path: Path) -> dict:
         }
 
 
-def safe_run_benchmark(repo_path: Path, entrypoints: list[str], output_dir: Path, data_files: list[str] | None = None) -> dict:
-    command = benchmark_command(repo_path, entrypoints)
+def safe_run_benchmark(
+    repo_path: Path,
+    entrypoints: list[str],
+    output_dir: Path,
+    data_files: list[str] | None = None,
+    research_question: str = "",
+) -> dict:
+    command_info = benchmark_command(repo_path, entrypoints, research_question)
     generated_script = None
-    if not command:
+    command_cwd = repo_path
+    if command_info:
+        command, command_cwd = command_info
+    else:
         generated_script = generated_replication_script(repo_path, data_files or [])
-        command = ["python", str(generated_script)]
+        command = [sys.executable, generated_script.name]
+        command_cwd = repo_path
 
     if os.getenv("ALLOW_BENCHMARK_CODE_EXECUTION", "").lower() != "true":
         return {
             "executed": False,
             "command_ready": command,
+            "command_cwd": str(command_cwd),
             "generated_script": str(generated_script) if generated_script else None,
             "reason": "Repo code execution is disabled. Set ALLOW_BENCHMARK_CODE_EXECUTION=true to run benchmark entrypoints.",
         }
@@ -247,7 +282,7 @@ def safe_run_benchmark(repo_path: Path, entrypoints: list[str], output_dir: Path
     try:
         completed = subprocess.run(
             command,
-            cwd=repo_path,
+            cwd=command_cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -255,17 +290,43 @@ def safe_run_benchmark(repo_path: Path, entrypoints: list[str], output_dir: Path
         )
         (output_dir / "benchmark_stdout.txt").write_text(completed.stdout, encoding="utf-8")
         (output_dir / "benchmark_stderr.txt").write_text(completed.stderr, encoding="utf-8")
+        fallback_result = None
+        if completed.returncode != 0 and generated_script is None and data_files:
+            fallback_script = generated_replication_script(repo_path, data_files)
+            fallback_command = [sys.executable, fallback_script.name]
+            fallback_completed = subprocess.run(
+                fallback_command,
+                cwd=repo_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=600,
+            )
+            (output_dir / "fallback_stdout.txt").write_text(fallback_completed.stdout, encoding="utf-8")
+            (output_dir / "fallback_stderr.txt").write_text(fallback_completed.stderr, encoding="utf-8")
+            fallback_result = {
+                "executed": True,
+                "command": fallback_command,
+                "command_cwd": str(repo_path),
+                "returncode": fallback_completed.returncode,
+                "stdout_path": str(output_dir / "fallback_stdout.txt"),
+                "stderr_path": str(output_dir / "fallback_stderr.txt"),
+                "generated_script": str(fallback_script),
+                "reason": "Original benchmark command failed, so Experiment ran a generated tabular fallback on repo data files.",
+            }
         return {
             "executed": True,
             "branch": branch_result,
             "command": command,
+            "command_cwd": str(command_cwd),
             "returncode": completed.returncode,
             "stdout_path": str(output_dir / "benchmark_stdout.txt"),
             "stderr_path": str(output_dir / "benchmark_stderr.txt"),
             "generated_script": str(generated_script) if generated_script else None,
+            "fallback_result": fallback_result,
         }
     except Exception as exc:
-        return {"executed": False, "branch": branch_result, "reason": str(exc), "command": command}
+        return {"executed": False, "branch": branch_result, "reason": str(exc), "command": command, "command_cwd": str(command_cwd)}
 
 
 def build_replication_plan(spec: dict) -> list[str]:
@@ -305,7 +366,13 @@ def run_experiment_stage(
     ]
 
     run_result = (
-        safe_run_benchmark(repo_path, entrypoints, output_path, generated_data_files)
+        safe_run_benchmark(
+            repo_path,
+            entrypoints,
+            output_path,
+            generated_data_files,
+            research_question=str(spec.get("research_question", "")),
+        )
         if repo_exists
         else {"executed": False, "reason": "Cloned repository path does not exist."}
     )
