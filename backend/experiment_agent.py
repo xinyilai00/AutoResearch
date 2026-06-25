@@ -1,36 +1,10 @@
 from __future__ import annotations
 
-import csv
-import datetime as dt
 import json
-import math
 import os
 import re
-import statistics
-import urllib.parse
-import urllib.request
-import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+import subprocess
 from pathlib import Path
-
-
-@dataclass
-class ExperimentResult:
-    status: str
-    hypothesis_supported: str
-    redesign_needed: bool
-    summary: str
-    dataset_name: str
-    dataset_url: str
-    runner_type: str
-    task_type: str
-    target_column: str
-    baseline: str
-    metrics: dict
-    results: dict
-    limitations: list[str]
-    output_files: list[str]
 
 
 def read_text_or_path(value: str | Path) -> str:
@@ -86,578 +60,47 @@ def extract_execution_spec(proposal: str) -> dict:
     raise ValueError("Execution spec JSON object is incomplete.")
 
 
-def run_parallel_experiment_agents(spec: dict, proposal: str, output_dir: Path) -> dict:
-    try:
-        try:
-            from .experiment.data_agent import run_data_agent
-            from .experiment.schema_agent import run_schema_agent
-            from .experiment.method_agent import run_method_agent
-            from .experiment.risk_agent import run_risk_agent
-        except ImportError:
-            from experiment.data_agent import run_data_agent
-            from experiment.schema_agent import run_schema_agent
-            from experiment.method_agent import run_method_agent
-            from experiment.risk_agent import run_risk_agent
-
-        checks = {}
-        agents = {
-            "data": run_data_agent,
-            "schema": run_schema_agent,
-            "method": run_method_agent,
-            "risk": run_risk_agent,
-        }
-        print("[Experiment Agent] Running experiment check agents in parallel...")
-        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
-            future_to_name = {
-                executor.submit(agent_fn, spec, proposal): name
-                for name, agent_fn in agents.items()
-            }
-            for future in as_completed(future_to_name):
-                name = future_to_name[future]
-                try:
-                    checks[name] = future.result()
-                except Exception as exc:
-                    checks[name] = {
-                        "agent": name,
-                        "ready": False,
-                        "issues": [str(exc)],
-                    }
-
-        report = {
-            "ready": all(bool(check.get("ready")) for check in checks.values()),
-            "checks": checks,
-        }
-        if os.getenv("WRITE_EXPERIMENT_CHECKS", "").lower() == "true":
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "experiment_agent_checks.json").write_text(
-                json.dumps(report, indent=2),
-                encoding="utf-8",
-            )
-        return report
-    except Exception as exc:
-        return {
-            "ready": False,
-            "checks": {
-                "parallel_agents": {
-                    "agent": "parallel_agents",
-                    "ready": False,
-                    "issues": [str(exc)],
-                }
-            },
-        }
+def list_existing(paths: list[str]) -> list[str]:
+    return [path for path in paths if path and Path(path).exists()]
 
 
-SUPPORTED_RUNNER_TYPES = {
-    "universal_tabular_csv",
-    "direct_csv",
-    "multi_csv",
-    "universal_data_file",
-    "financial_sentiment_timeseries",
-}
-SUPPORTED_TASK_TYPES = {"classification", "regression", "auto", "inspect"}
-SUPPORTED_METRICS = {"accuracy", "mae", "rmse", "r2", "none", "inspect"}
-SUPPORTED_DATA_EXTENSIONS = {".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".zip"}
-TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "latin-1", "cp1252")
-GENERIC_TARGET_HINTS = (
-    "target",
-    "label",
-    "class",
-    "category",
-    "outcome",
-    "result",
-    "winner",
-    "ftr",
-    "full_time_result",
-    "y",
-)
-CONTEXT_STOPWORDS = {
-    "about",
-    "across",
-    "after",
-    "analysis",
-    "and",
-    "based",
-    "between",
-    "can",
-    "data",
-    "dataset",
-    "datasets",
-    "does",
-    "effect",
-    "from",
-    "how",
-    "into",
-    "model",
-    "models",
-    "predict",
-    "prediction",
-    "public",
-    "research",
-    "the",
-    "this",
-    "through",
-    "using",
-    "what",
-    "when",
-    "with",
-}
-DOMAIN_TARGET_HINTS = {
-    "injury": ["injury", "injured", "injury_status", "injury_label", "is_injured"],
-    "injuries": ["injury", "injured", "injury_status", "injury_label", "is_injured"],
-    "sport": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
-    "sports": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
-    "match": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
-    "game": ["winner", "result", "outcome", "home_win", "away_win", "score"],
-    "win": ["winner", "win", "home_win", "away_win", "result", "outcome"],
-    "winner": ["winner", "win", "result", "outcome"],
-    "return": ["return", "returns", "excess_return", "next_return", "target_return"],
-    "returns": ["return", "returns", "excess_return", "next_return", "target_return"],
-    "price": ["price", "close", "adj_close", "target_price", "next_price"],
-    "sentiment": ["sentiment", "label", "polarity", "class"],
-    "classification": ["label", "class", "category", "target", "outcome"],
-    "diagnosis": ["diagnosis", "disease", "condition", "label", "class"],
-    "risk": ["risk", "default", "failure", "event", "outcome"],
-    "rating": ["rating", "score", "target", "outcome"],
-}
-NON_DATA_FILE_MARKERS = (
-    ".babelrc",
-    ".claude/",
-    ".editorconfig",
-    ".eslintrc",
-    ".github/",
-    ".gitignore",
-    ".markdownlint",
-    ".prettierrc",
-    "cargo.lock",
-    "composer.lock",
-    "config/",
-    "eslint.config",
-    "flake.lock",
-    "package-lock.json",
-    "package.json",
-    "pnpm-lock.yaml",
-    "poetry.lock",
-    "pyproject.toml",
-    "requirements.txt",
-    "settings.json",
-    "tsconfig",
-    "yarn.lock",
-)
-
-
-def normalize_column_name(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-
-
-def context_tokens(context: str) -> list[str]:
-    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_]{2,}", context.lower())
-    return [
-        token
-        for token in dict.fromkeys(tokens)
-        if token not in CONTEXT_STOPWORDS and len(token) <= 32
-    ]
-
-
-def target_hints_for_context(context: str) -> list[str]:
-    hints = list(GENERIC_TARGET_HINTS)
-    for token in context_tokens(context):
-        hints.append(token)
-        hints.extend(DOMAIN_TARGET_HINTS.get(token, []))
-    return list(dict.fromkeys(normalize_column_name(hint) for hint in hints if hint))
-
-
-def normalize_execution_spec(spec: dict) -> dict:
-    normalized = dict(spec or {})
-    runner_type = str(normalized.get("runner_type", "")).strip().lower()
-    task_type = str(normalized.get("task_type", "")).strip().lower()
-    threshold_direction = str(normalized.get("threshold_direction", "")).strip().lower()
-
-    urls = dataset_urls_from_spec(normalized)
-    has_direct_data = any(looks_like_supported_data_file(url) or Path(url).exists() for url in urls)
-
-    if runner_type in {"standard", "default", "general", "generic", "safe", "basic"}:
-        normalized["runner_type"] = "universal_data_file" if has_direct_data else "NEEDS_NEW_RUNNER"
-    elif runner_type:
-        normalized["runner_type"] = runner_type
-
-    if task_type not in SUPPORTED_TASK_TYPES:
-        normalized["task_type"] = "auto" if has_direct_data else "inspect"
-    else:
-        normalized["task_type"] = task_type
-
-    feature_columns = normalized.get("feature_columns", [])
-    if not isinstance(feature_columns, list):
-        feature_columns = [str(feature_columns)]
-    normalized["feature_columns"] = [
-        "AUTO_NUMERIC" if str(column).strip().upper() in {"AUTO_DETECT", "AUTO", "AUTO_FEATURES"} else column
-        for column in feature_columns
-    ]
-
-    if threshold_direction in {"above", "higher", "greater", "greater_than", "at_least", ">=", ">"}:
-        normalized["threshold_direction"] = "greater_or_equal"
-    elif threshold_direction in {"below", "lower", "less", "less_than", "at_most", "<=", "<"}:
-        normalized["threshold_direction"] = "less_or_equal"
-    elif threshold_direction:
-        normalized["threshold_direction"] = threshold_direction
-
-    if str(normalized.get("target_column", "")).strip().upper() in {"", "TO_VERIFY"} and has_direct_data:
-        normalized["target_column"] = "AUTO_TARGET"
-
-    return normalized
-
-
-def needs_redesign(spec: dict) -> str | None:
-    runner_type = str(spec.get("runner_type", "universal_tabular_csv")).lower()
-    if runner_type == "needs_new_runner":
-        return "Proposal says this experiment requires a new specialized runner."
-    if runner_type not in SUPPORTED_RUNNER_TYPES:
-        return f"runner_type '{runner_type}' is not supported by the current Experiment Agent."
-
-    task_type = str(spec.get("task_type", "")).lower()
-    workflow_runner = runner_type == "financial_sentiment_timeseries"
-    inspect_only = runner_type == "universal_data_file" and task_type == "inspect"
-    if workflow_runner:
-        required = ["task_type", "target_column", "success_metric"]
-        for key in required:
-            value = spec.get(key)
-            if not value or str(value).strip().upper() == "TO_VERIFY":
-                return f"Execution spec field '{key}' is missing or TO_VERIFY."
-        if task_type not in {"regression", "auto"}:
-            return "financial_sentiment_timeseries supports regression or auto task_type."
-        return None
-
-    required = ["task_type", "success_metric"] if inspect_only else ["task_type", "target_column", "success_metric"]
-    for key in required:
-        value = spec.get(key)
-        if not value or str(value).strip().upper() == "TO_VERIFY":
-            return f"Execution spec field '{key}' is missing or TO_VERIFY."
-
-    dataset_urls = dataset_urls_from_spec(spec)
-    if not dataset_urls:
-        return "Execution spec must provide dataset_url or dataset_urls."
-
-    for dataset_url in dataset_urls:
-        if dataset_url.upper() == "TO_VERIFY":
-            return "dataset_urls contains TO_VERIFY."
-        if not (dataset_url.startswith("http://") or dataset_url.startswith("https://") or Path(dataset_url).exists()):
-            return "Each dataset URL must be a direct HTTP(S) data file URL or an existing local file path."
-        if runner_type in {"universal_tabular_csv", "direct_csv", "multi_csv"} and dataset_url.startswith("http") and not looks_like_csv_url(dataset_url):
-            return "Each HTTP dataset URL must point directly to a downloadable CSV file, not a repository or webpage."
-        if runner_type == "universal_data_file" and not looks_like_supported_data_file(dataset_url):
-            return "universal_data_file supports direct CSV, TSV, JSON, JSONL, NDJSON, or ZIP files only."
-
-    if task_type not in SUPPORTED_TASK_TYPES:
-        return "task_type must be classification, regression, or auto."
-
-    metric_name = str(spec.get("success_metric", "")).lower()
-    if metric_name not in SUPPORTED_METRICS:
-        return f"success_metric '{metric_name}' is not supported by the current Experiment Agent."
-
+def benchmark_command(repo_path: Path, entrypoints: list[str]) -> list[str] | None:
+    for entrypoint in entrypoints:
+        candidate = repo_path / entrypoint
+        if not candidate.exists():
+            continue
+        if candidate.suffix == ".py":
+            return ["python", str(candidate)]
+        if candidate.suffix == ".sh":
+            return ["bash", str(candidate)]
+        if candidate.suffix.lower() == ".r":
+            return ["Rscript", str(candidate)]
     return None
 
 
-def looks_like_csv_url(url: str) -> bool:
-    parsed = urllib.parse.urlparse(url)
-    path = parsed.path.lower()
-    return path.endswith(".csv")
+def generated_replication_script(repo_path: Path, data_files: list[str]) -> Path:
+    script_path = repo_path / "autoresearch_replication.py"
+    script_path.write_text(
+        '''from __future__ import annotations
+
+import csv
+import json
+import math
+from collections import Counter
+from pathlib import Path
 
 
-def looks_like_supported_data_file(url_or_path: str) -> bool:
-    parsed = urllib.parse.urlparse(url_or_path)
-    path = parsed.path.lower()
-    suffix = Path(path).suffix
-    if suffix not in SUPPORTED_DATA_EXTENSIONS:
-        return False
-    if any(marker in path for marker in NON_DATA_FILE_MARKERS):
-        return False
-    name = path.rsplit("/", 1)[-1]
-    return not name.startswith(".")
+BAD_TARGET_MARKERS = ("id", "date", "time", "name", "url", "path", "source")
+TARGET_HINTS = ("target", "label", "class", "outcome", "result", "winner", "win", "home_win", "ftr", "y")
 
 
-def dataset_urls_from_spec(spec: dict) -> list[str]:
-    urls = []
-    raw_urls = spec.get("dataset_urls")
-    if isinstance(raw_urls, list):
-        urls.extend(str(url).strip() for url in raw_urls if str(url).strip())
-    dataset_url = str(spec.get("dataset_url", "")).strip()
-    if dataset_url and dataset_url.upper() != "TO_VERIFY":
-        urls.insert(0, dataset_url)
-    return list(dict.fromkeys(urls))
+def read_rows(path: Path) -> list[dict]:
+    delimiter = "\\t" if path.suffix.lower() == ".tsv" else ","
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return [dict(row) for row in csv.DictReader(handle, delimiter=delimiter)]
 
 
-def load_csvs(spec: dict, output_dir: Path) -> tuple[list[dict], list[Path]]:
-    dataset_urls = dataset_urls_from_spec(spec)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    all_rows = []
-    data_paths = []
-    failures = []
-
-    for index, dataset_url in enumerate(dataset_urls, 1):
-        data_path = output_dir / f"dataset_{index:02d}.csv"
-        try:
-            if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
-                with urllib.request.urlopen(dataset_url, timeout=120) as response:
-                    data = response.read()
-                data_path.write_bytes(data)
-            else:
-                source_path = Path(dataset_url)
-                data_path.write_bytes(source_path.read_bytes())
-        except Exception as exc:
-            failures.append(f"{dataset_url}: {exc}")
-            continue
-
-        reader = csv.DictReader(read_text_with_fallback(data_path).splitlines())
-        rows = [dict(row, source_file=data_path.name) for row in reader]
-        all_rows.extend(rows)
-        data_paths.append(data_path)
-
-    if not all_rows:
-        if failures:
-            raise ValueError("No CSV datasets could be loaded. Failures: " + " | ".join(failures[:5]))
-        raise ValueError("Dataset CSV loaded but has no rows.")
-    return all_rows, data_paths
-
-
-def filename_from_dataset_url(dataset_url: str, index: int) -> str:
-    parsed = urllib.parse.urlparse(dataset_url)
-    name = Path(parsed.path).name
-    if not name:
-        name = f"dataset_{index:02d}.dat"
-    return f"dataset_{index:02d}_{name}"
-
-
-def download_data_files(spec: dict, output_dir: Path) -> list[Path]:
-    dataset_urls = dataset_urls_from_spec(spec)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    data_paths = []
-    failures = []
-
-    for index, dataset_url in enumerate(dataset_urls, 1):
-        data_path = output_dir / filename_from_dataset_url(dataset_url, index)
-        try:
-            if dataset_url.startswith("http://") or dataset_url.startswith("https://"):
-                with urllib.request.urlopen(dataset_url, timeout=120) as response:
-                    data = response.read()
-                data_path.write_bytes(data)
-            else:
-                source_path = Path(dataset_url)
-                data_path.write_bytes(source_path.read_bytes())
-        except Exception as exc:
-            failures.append(f"{dataset_url}: {exc}")
-            continue
-        data_paths.append(data_path)
-
-    if not data_paths and failures:
-        raise ValueError("No data files could be downloaded or loaded. Failures: " + " | ".join(failures[:5]))
-    return data_paths
-
-
-def read_text_with_fallback(path: Path) -> str:
-    last_error: Exception | None = None
-    for encoding in TEXT_ENCODINGS:
-        try:
-            return path.read_text(encoding=encoding)
-        except UnicodeDecodeError as exc:
-            last_error = exc
-    raise UnicodeDecodeError(
-        "unknown",
-        b"",
-        0,
-        1,
-        f"Could not decode {path} with {', '.join(TEXT_ENCODINGS)}. Last error: {last_error}",
-    )
-
-
-def read_delimited_rows(path: Path, delimiter: str | None = None) -> list[dict]:
-    if delimiter is None:
-        delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
-    text = read_text_with_fallback(path)
-    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
-    return [dict(row, source_file=path.name) for row in reader]
-
-
-def json_to_rows(payload: object, source_name: str) -> list[dict]:
-    if isinstance(payload, list):
-        if all(isinstance(item, dict) for item in payload):
-            return [dict(item, source_file=source_name) for item in payload]
-        return [{"value": item, "source_file": source_name} for item in payload]
-    if isinstance(payload, dict):
-        values = list(payload.values())
-        if values and all(isinstance(item, dict) for item in values):
-            return [dict(item, source_file=source_name) for item in values]
-        return [{**payload, "source_file": source_name}]
-    return [{"value": payload, "source_file": source_name}]
-
-
-def read_json_rows(path: Path) -> list[dict]:
-    payload = json.loads(read_text_with_fallback(path))
-    return json_to_rows(payload, path.name)
-
-
-def read_jsonl_rows(path: Path) -> list[dict]:
-    rows = []
-    for line_number, line in enumerate(read_text_with_fallback(path).splitlines(), 1):
-        line = line.strip()
-        if not line:
-            continue
-        payload = json.loads(line)
-        if isinstance(payload, dict):
-            rows.append(dict(payload, source_file=path.name))
-        else:
-            rows.append({"value": payload, "line_number": line_number, "source_file": path.name})
-    return rows
-
-
-def load_supported_data_file(path: Path, output_dir: Path) -> tuple[list[dict], list[Path], list[dict]]:
-    suffix = path.suffix.lower()
-    loaded_paths = [path]
-    inventories = []
-
-    if suffix == ".zip":
-        extract_dir = output_dir / f"{path.stem}_extracted"
-        extract_dir.mkdir(parents=True, exist_ok=True)
-        all_rows = []
-        with zipfile.ZipFile(path) as archive:
-            for member in archive.namelist():
-                member_suffix = Path(member).suffix.lower()
-                if member.endswith("/") or member_suffix not in SUPPORTED_DATA_EXTENSIONS - {".zip"}:
-                    continue
-                safe_name = Path(member).name
-                extracted_path = extract_dir / safe_name
-                extracted_path.write_bytes(archive.read(member))
-                rows, child_paths, child_inventory = load_supported_data_file(extracted_path, output_dir)
-                all_rows.extend(rows)
-                loaded_paths.extend(child_paths)
-                inventories.extend(child_inventory)
-        inventories.insert(
-            0,
-            {
-                "file": str(path),
-                "type": "zip",
-                "members_loaded": len(loaded_paths) - 1,
-                "rows": len(all_rows),
-            },
-        )
-        return all_rows, loaded_paths, inventories
-
-    if suffix == ".csv":
-        rows = read_delimited_rows(path, ",")
-        file_type = "csv"
-    elif suffix == ".tsv":
-        rows = read_delimited_rows(path, "\t")
-        file_type = "tsv"
-    elif suffix in {".jsonl", ".ndjson"}:
-        rows = read_jsonl_rows(path)
-        file_type = "jsonl"
-    elif suffix == ".json":
-        rows = read_json_rows(path)
-        file_type = "json"
-    else:
-        rows = []
-        file_type = suffix.lstrip(".") or "unknown"
-
-    columns = sorted({key for row in rows[:100] for key in row.keys()})
-    inventories.append(
-        {
-            "file": str(path),
-            "type": file_type,
-            "rows": len(rows),
-            "columns": columns[:50],
-            "column_count": len(columns),
-        }
-    )
-    return rows, loaded_paths, inventories
-
-
-def load_universal_data_files(spec: dict, output_dir: Path) -> tuple[list[dict], list[Path], list[dict]]:
-    downloaded_paths = download_data_files(spec, output_dir)
-    all_rows = []
-    loaded_paths = []
-    inventory = []
-
-    for path in downloaded_paths:
-        rows, paths, file_inventory = load_supported_data_file(path, output_dir)
-        all_rows.extend(rows)
-        loaded_paths.extend(paths)
-        inventory.extend(file_inventory)
-
-    return all_rows, loaded_paths, inventory
-
-
-def infer_target_column(rows: list[dict], context: str = "") -> str:
-    if not rows:
-        raise ValueError("Cannot infer target column from an empty dataset.")
-    columns = [column for column in rows[0].keys() if column != "source_file"]
-    if not columns:
-        raise ValueError("Cannot infer target column because the CSV has no usable columns.")
-
-    hints = target_hints_for_context(context)
-    usable_columns = []
-    for column in columns:
-        values = [row.get(column, "") for row in rows[:500] if str(row.get(column, "")).strip()]
-        if values:
-            usable_columns.append((column, len(set(values)), len(values)))
-    if not usable_columns:
-        raise ValueError("Cannot infer target column because all columns are empty.")
-
-    scored = []
-    for column, unique_count, value_count in usable_columns:
-        normalized = normalize_column_name(column)
-        score = 0
-        for hint in hints:
-            if normalized == hint:
-                score += 120
-            elif normalized.endswith(f"_{hint}") or normalized.startswith(f"{hint}_"):
-                score += 80
-            elif hint in normalized:
-                score += 45
-
-        if any(generic in normalized for generic in GENERIC_TARGET_HINTS):
-            score += 25
-        if 1 < unique_count <= 50:
-            score += 20
-        if unique_count == 2:
-            score += 15
-        if unique_count > max(50, value_count * 0.8):
-            score -= 45
-        if any(marker in normalized for marker in ("id", "date", "time", "name", "url", "path")):
-            score -= 40
-        if normalized in {"source_file", "index"}:
-            score -= 100
-        scored.append((score, column, unique_count))
-
-    scored.sort(key=lambda item: (-item[0], columns.index(item[1])))
-    if scored and scored[0][0] > 0:
-        return scored[0][1]
-
-    categorical_candidates = [
-        (column, unique_count)
-        for column, unique_count, _ in usable_columns
-        if 1 < unique_count <= 50
-    ]
-    if categorical_candidates:
-        return categorical_candidates[-1][0]
-    return usable_columns[-1][0]
-
-
-def infer_task_type(rows: list[dict], target_column: str, requested_task_type: str) -> str:
-    task_type = requested_task_type.lower().strip()
-    if task_type in {"classification", "regression"}:
-        return task_type
-
-    values = [row.get(target_column, "") for row in rows[:1000] if str(row.get(target_column, "")).strip()]
-    if not values:
-        raise ValueError(f"Cannot infer task type because target column '{target_column}' has no values.")
-
-    numeric_values = [numeric_value(value) for value in values]
-    numeric_values = [value for value in numeric_values if value is not None]
-    unique_count = len(set(values))
-    if len(numeric_values) == len(values) and unique_count > 20:
-        return "regression"
-    return "classification"
-
-
-def numeric_value(value: object) -> float | None:
+def numeric(value):
     try:
         if value is None or str(value).strip() == "":
             return None
@@ -665,719 +108,281 @@ def numeric_value(value: object) -> float | None:
         if math.isnan(number) or math.isinf(number):
             return None
         return number
-    except (TypeError, ValueError):
+    except ValueError:
         return None
 
 
-def train_test_split(rows: list[dict], test_fraction: float = 0.2) -> tuple[list[dict], list[dict]]:
-    split_index = max(1, int(len(rows) * (1 - test_fraction)))
-    return rows[:split_index], rows[split_index:] or rows[:]
+def choose_target(rows: list[dict]) -> str:
+    columns = list(rows[0].keys())
+    scored = []
+    for column in columns:
+        name = column.lower()
+        values = [str(row.get(column, "")).strip() for row in rows[:1000] if str(row.get(column, "")).strip()]
+        if not values:
+            continue
+        unique_count = len(set(values))
+        score = 0
+        if any(hint == name or hint in name for hint in TARGET_HINTS):
+            score += 100
+        if 1 < unique_count <= 50:
+            score += 25
+        if any(marker in name for marker in BAD_TARGET_MARKERS):
+            score -= 80
+        scored.append((score, column))
+    scored.sort(key=lambda item: (-item[0], columns.index(item[1])))
+    if not scored or scored[0][0] <= 0:
+        raise ValueError("No credible target column found.")
+    return scored[0][1]
 
 
-def run_classification(rows: list[dict], target_column: str) -> tuple[dict, dict]:
-    train_rows, test_rows = train_test_split(rows)
-    labels = [row.get(target_column, "") for row in train_rows if row.get(target_column, "") != ""]
-    if not labels:
-        raise ValueError("Target column has no usable labels.")
-
-    majority_label = max(set(labels), key=labels.count)
-    test_labels = [row.get(target_column, "") for row in test_rows if row.get(target_column, "") != ""]
-    if not test_labels:
-        raise ValueError("Test split has no usable labels.")
-
-    correct = sum(1 for label in test_labels if label == majority_label)
-    accuracy = correct / len(test_labels)
-    metrics = {
-        "accuracy": accuracy,
-        "test_examples": len(test_labels),
-    }
-    results = {
-        "baseline_prediction": majority_label,
-        "correct_predictions": correct,
-    }
-    return metrics, results
+def infer_task(rows: list[dict], target: str) -> str:
+    values = [row.get(target, "") for row in rows[:1000] if str(row.get(target, "")).strip()]
+    numeric_values = [numeric(value) for value in values]
+    numeric_values = [value for value in numeric_values if value is not None]
+    return "regression" if len(numeric_values) == len(values) and len(set(values)) > 20 else "classification"
 
 
-def run_regression(rows: list[dict], target_column: str) -> tuple[dict, dict]:
-    train_rows, test_rows = train_test_split(rows)
-    train_values = [numeric_value(row.get(target_column)) for row in train_rows]
-    train_values = [value for value in train_values if value is not None]
-    if not train_values:
-        raise ValueError("Target column has no usable numeric training values.")
-
-    prediction = statistics.mean(train_values)
-    actual_values = [numeric_value(row.get(target_column)) for row in test_rows]
-    actual_values = [value for value in actual_values if value is not None]
-    if not actual_values:
-        raise ValueError("Test split has no usable numeric target values.")
-
-    errors = [actual - prediction for actual in actual_values]
-    absolute_errors = [abs(error) for error in errors]
-    squared_errors = [error * error for error in errors]
-    mae = statistics.mean(absolute_errors)
-    rmse = math.sqrt(statistics.mean(squared_errors))
-
-    mean_actual = statistics.mean(actual_values)
-    total_sum_squares = sum((actual - mean_actual) ** 2 for actual in actual_values)
-    residual_sum_squares = sum(squared_errors)
-    r2 = 1 - residual_sum_squares / total_sum_squares if total_sum_squares else 0.0
-
-    metrics = {
-        "mae": mae,
-        "rmse": rmse,
-        "r2": r2,
-        "test_examples": len(actual_values),
-    }
-    results = {
-        "baseline_prediction": prediction,
-    }
-    return metrics, results
+def baseline(rows: list[dict], target: str, task: str) -> dict:
+    split = max(1, int(len(rows) * 0.8))
+    train = rows[:split]
+    test = rows[split:] or rows[:]
+    if task == "classification":
+        labels = [row.get(target, "") for row in train if str(row.get(target, "")).strip()]
+        prediction = Counter(labels).most_common(1)[0][0]
+        correct = sum(1 for row in test if row.get(target, "") == prediction)
+        return {"model": "majority_class", "accuracy": correct / len(test), "test_examples": len(test), "prediction": prediction}
+    values = [numeric(row.get(target)) for row in train]
+    values = [value for value in values if value is not None]
+    prediction = sum(values) / len(values)
+    actual = [numeric(row.get(target)) for row in test]
+    actual = [value for value in actual if value is not None]
+    mae = sum(abs(value - prediction) for value in actual) / len(actual)
+    return {"model": "mean_prediction", "mae": mae, "test_examples": len(actual), "prediction": prediction}
 
 
-def decide_hypothesis_support(spec: dict, metrics: dict) -> str:
-    metric_name = str(spec.get("success_metric", "")).lower()
-    direction = str(spec.get("threshold_direction", "")).lower()
-    try:
-        threshold = float(spec.get("success_threshold"))
-    except (TypeError, ValueError):
-        return "INCONCLUSIVE"
-
-    if metric_name not in metrics:
-        return "INCONCLUSIVE"
-
-    value = float(metrics[metric_name])
-    if direction == "greater_or_equal":
-        return "SUPPORTED" if value >= threshold else "NOT_SUPPORTED"
-    if direction == "less_or_equal":
-        return "SUPPORTED" if value <= threshold else "NOT_SUPPORTED"
-    return "INCONCLUSIVE"
-
-
-def write_outputs(output_dir: Path, result: ExperimentResult) -> str:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "experiment_result.json"
-    markdown_path = output_dir / "experiment_output.md"
-    json_path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
-
-    lines = [
-        "# Experiment Results",
-        "",
-        "## Status",
-        result.status,
-        "",
-        "## Hypothesis Supported",
-        result.hypothesis_supported,
-        "",
-        "## Summary",
-        result.summary,
-        "",
-        "## Dataset",
-        f"- Name: {result.dataset_name}",
-        f"- URL/path: {result.dataset_url}",
-        f"- Target column: {result.target_column}",
-        "",
-        "## Method",
-        f"- Runner type: {result.runner_type}",
-        f"- Task type: {result.task_type}",
-        f"- Baseline: {result.baseline}",
-        "",
-        "## Metrics",
-        *[f"- {key}: {value}" for key, value in result.metrics.items()],
-        "",
-        "## Results",
-        *[f"- {key}: {value}" for key, value in result.results.items()],
-        "",
-        "## Limitations",
-        *[f"- {item}" for item in result.limitations],
-        "",
-        "## Output Files",
-        *[f"- {item}" for item in result.output_files],
-    ]
-    markdown = "\n".join(lines).rstrip() + "\n"
-    markdown_path.write_text(markdown, encoding="utf-8")
-    return markdown
+def main():
+    candidate_files = [Path(item) for item in DATA_FILES]
+    loaded = []
+    for path in candidate_files:
+        if path.exists() and path.suffix.lower() in {".csv", ".tsv"}:
+            rows = read_rows(path)
+            if len(rows) >= 20:
+                loaded.append((path, rows))
+    if not loaded:
+        raise SystemExit("No usable CSV/TSV data file with at least 20 rows was found.")
+    path, rows = max(loaded, key=lambda item: len(item[1]))
+    target = choose_target(rows)
+    task = infer_task(rows, target)
+    result = baseline(rows, target, task)
+    result.update({"data_file": str(path), "rows": len(rows), "target": target, "task": task})
+    Path("autoresearch_replication_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(json.dumps(result, indent=2))
 
 
-def redesign_result(proposal: str, output_dir: Path, reason: str, spec: dict | None = None) -> str:
-    spec = spec or {}
-    dataset_url = ", ".join(dataset_urls_from_spec(spec)) if spec else "TO_VERIFY"
-    limitations = [
-        "No empirical results were generated.",
-        "The current Experiment Agent can execute universal_tabular_csv and universal_data_file specs only.",
-        "The proposal must be redesigned as an executable analysis over downloadable/public data files before this stage can run.",
-    ]
-    notes = str(spec.get("notes_for_experiment_agent", "")).strip()
-    if notes:
-        limitations.append(f"Runner notes: {notes}")
+DATA_FILES = __DATA_FILES__
 
-    result = ExperimentResult(
-        status="REDESIGN_NEEDED",
-        hypothesis_supported="UNDETERMINED",
-        redesign_needed=True,
-        summary=f"Experiment was not executed: {reason}",
-        dataset_name=str(spec.get("dataset_name", "TO_VERIFY")),
-        dataset_url=dataset_url or "TO_VERIFY",
-        runner_type=str(spec.get("runner_type", "TO_VERIFY")),
-        task_type=str(spec.get("task_type", "TO_VERIFY")),
-        target_column=str(spec.get("target_column", "TO_VERIFY")),
-        baseline=str(spec.get("baseline", "TO_VERIFY")),
-        metrics={},
-        results={},
-        limitations=limitations,
-        output_files=[],
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "proposal_needs_redesign.md").write_text(
-        "# Proposal Needs Redesign\n\n"
-        f"Reason: {reason}\n\n"
-        "Original proposal:\n\n"
-        f"{proposal.rstrip()}\n",
+
+if __name__ == "__main__":
+    main()
+'''.replace("__DATA_FILES__", repr(data_files)),
         encoding="utf-8",
     )
-    return write_outputs(output_dir, result)
+    return script_path
 
 
-def universal_inventory_result(
-    spec: dict,
-    output_dir: Path,
-    rows: list[dict],
-    data_paths: list[Path],
-    inventory: list[dict],
-    reason: str,
-) -> str:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    inventory_path = output_dir / "data_inventory.json"
-    inventory_path.write_text(json.dumps(inventory, indent=2), encoding="utf-8")
-
-    result = ExperimentResult(
-        status="DATA_LOADED_REDESIGN_NEEDED",
-        hypothesis_supported="UNDETERMINED",
-        redesign_needed=True,
-        summary=(
-            "Universal data files were downloaded and inspected, but the full experiment was not executed: "
-            f"{reason}"
-        ),
-        dataset_name=str(spec.get("dataset_name", "Unknown")),
-        dataset_url=", ".join(dataset_urls_from_spec(spec)),
-        runner_type=str(spec.get("runner_type", "universal_data_file")),
-        task_type=str(spec.get("task_type", "inspect")),
-        target_column=str(spec.get("target_column", "TO_VERIFY")),
-        baseline=str(spec.get("baseline", "TO_VERIFY")),
-        metrics={
-            "files_loaded": len(data_paths),
-            "tabular_rows_loaded": len(rows),
-            "inventoried_files": len(inventory),
-        },
-        results={
-            "inventory_path": str(inventory_path),
-            "file_types": sorted({str(item.get("type")) for item in inventory}),
-        },
-        limitations=[
-            "The universal_data_file runner loads and inspects common data files but does not perform scraping, API pagination, NLP extraction, graph construction, deep learning, or advanced statistical tests.",
-            "Provide a direct target column and a supported task type to run a simple dataset analysis, or implement a specialized runner for the full proposed dataset analysis.",
-        ],
-        output_files=[*(str(path) for path in data_paths), str(inventory_path), str(output_dir / "experiment_result.json"), str(output_dir / "experiment_output.md")],
-    )
-    return write_outputs(output_dir, result)
-
-
-def run_universal_data_file_experiment(spec: dict, output_path: Path, context: str = "") -> str:
-    rows, data_paths, inventory = load_universal_data_files(spec, output_path)
-    target_column = str(spec.get("target_column", "")).strip()
-    task_type_requested = str(spec.get("task_type", "inspect")).lower()
-
-    if not rows:
-        return universal_inventory_result(
-            spec,
-            output_path,
-            rows,
-            data_paths,
-            inventory,
-            "No tabular rows could be extracted from the provided files.",
-        )
-
-    if target_column.upper() in {"", "TO_VERIFY", "AUTO_TARGET"}:
-        try:
-            target_column = infer_target_column(rows, context + "\n" + json.dumps(spec))
-            spec = dict(spec)
-            spec["target_column"] = target_column
-            if task_type_requested == "inspect":
-                task_type_requested = "auto"
-                spec["task_type"] = "auto"
-        except ValueError as exc:
-            return universal_inventory_result(
-                spec,
-                output_path,
-                rows,
-                data_paths,
-                inventory,
-                f"Could not infer an executable target column: {exc}",
-            )
-
-    if task_type_requested == "inspect":
-        return universal_inventory_result(
-            spec,
-            output_path,
-            rows,
-            data_paths,
-            inventory,
-            "Task type is inspect, so no baseline model was run.",
-        )
-
-    if target_column not in rows[0]:
-        return universal_inventory_result(
-            spec,
-            output_path,
-            rows,
-            data_paths,
-            inventory,
-            f"Target column '{target_column}' does not exist in the loaded data.",
-        )
-
-    task_type = infer_task_type(rows, target_column, task_type_requested)
-    if task_type == "classification":
-        metrics, results = run_classification(rows, target_column)
-    else:
-        metrics, results = run_regression(rows, target_column)
-
-    inventory_path = output_path / "data_inventory.json"
-    inventory_path.write_text(json.dumps(inventory, indent=2), encoding="utf-8")
-    hypothesis_supported = decide_hypothesis_support(spec, metrics)
-    result = ExperimentResult(
-        status="COMPLETED",
-        hypothesis_supported=hypothesis_supported,
-        redesign_needed=False,
-        summary=(
-            "Experiment completed with the universal_data_file runner using extracted tabular rows "
-            "and a simple baseline evaluation."
-        ),
-        dataset_name=str(spec.get("dataset_name", "Unknown")),
-        dataset_url=", ".join(dataset_urls_from_spec(spec)),
-        runner_type="universal_data_file",
-        task_type=task_type,
-        target_column=target_column,
-        baseline=str(spec.get("baseline", "")),
-        metrics=metrics,
-        results=results | {"inventory_path": str(inventory_path)},
-        limitations=[
-            "The universal_data_file runner performs file loading and simple baseline evaluation only.",
-            "Prompt-specific feature engineering, graph models, NLP extraction, scraping, and statistical tests require specialized runners.",
-        ],
-        output_files=[*(str(path) for path in data_paths), str(inventory_path), str(output_path / "experiment_result.json"), str(output_path / "experiment_output.md")],
-    )
-    return write_outputs(output_path, result)
-
-
-POSITIVE_WORDS = {
-    "beat",
-    "beats",
-    "bullish",
-    "gain",
-    "gains",
-    "growth",
-    "improve",
-    "improved",
-    "profit",
-    "profits",
-    "record",
-    "rise",
-    "rises",
-    "strong",
-    "surge",
-    "up",
-}
-NEGATIVE_WORDS = {
-    "bearish",
-    "decline",
-    "declines",
-    "down",
-    "drop",
-    "drops",
-    "fall",
-    "falls",
-    "loss",
-    "losses",
-    "miss",
-    "misses",
-    "risk",
-    "risks",
-    "weak",
-    "warning",
-}
-
-
-def simple_financial_sentiment(text: str) -> float:
-    words = re.findall(r"[A-Za-z]+", text.lower())
-    if not words:
-        return 0.0
-    positive = sum(1 for word in words if word in POSITIVE_WORDS)
-    negative = sum(1 for word in words if word in NEGATIVE_WORDS)
-    return (positive - negative) / max(1, positive + negative)
-
-
-def normalize_date(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
-        try:
-            return dt.datetime.strptime(text[:10], fmt).date().isoformat()
-        except ValueError:
-            pass
-    return text[:10]
-
-
-def parse_float(value: object) -> float | None:
-    return numeric_value(value)
-
-
-def find_column(row: dict, candidates: list[str]) -> str | None:
-    normalized = {
-        re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_"): key
-        for key in row.keys()
-    }
-    for candidate in candidates:
-        normalized_candidate = re.sub(r"[^a-z0-9]+", "_", candidate.lower()).strip("_")
-        if normalized_candidate in normalized:
-            return normalized[normalized_candidate]
-    return None
-
-
-def rows_from_direct_financial_files(spec: dict, output_path: Path) -> tuple[list[dict], list[dict], list[Path], list[dict]]:
-    file_urls = [
-        url
-        for url in dataset_urls_from_spec(spec)
-        if url.upper() != "TO_VERIFY" and looks_like_supported_data_file(url)
-    ]
-    if not file_urls:
-        return [], [], [], []
-
-    file_spec = dict(spec)
-    file_spec["dataset_url"] = file_urls[0]
-    file_spec["dataset_urls"] = file_urls
-    rows, paths, inventory = load_universal_data_files(file_spec, output_path)
-
-    price_rows = []
-    headline_rows = []
-    for row in rows:
-        date_col = find_column(row, ["date", "datetime", "timestamp"])
-        close_col = find_column(row, ["close", "adj close", "adj_close", "adjusted_close"])
-        headline_col = find_column(row, ["headline", "title", "text", "article", "content"])
-        if date_col and close_col:
-            price_rows.append(row)
-        elif date_col and headline_col:
-            headline_rows.append(row)
-    return price_rows, headline_rows, paths, inventory
-
-
-def load_yfinance_price_rows(spec: dict, output_path: Path) -> tuple[list[dict], list[Path], list[str]]:
-    tickers = spec.get("tickers") or spec.get("symbols") or ["AAPL", "MSFT", "GOOGL"]
-    if isinstance(tickers, str):
-        tickers = [item.strip() for item in re.split(r"[,;\\s]+", tickers) if item.strip()]
-    start = str(spec.get("start_date") or "2021-01-01")
-    end = str(spec.get("end_date") or "2024-12-31")
-    warnings = []
-
+def prepare_replication_branch(repo_path: Path) -> dict:
+    branch_name = os.getenv("BENCHMARK_REPLICATION_BRANCH", "autoresearch-replication")
+    if not (repo_path / ".git").exists():
+        return {
+            "branch_prepared": False,
+            "branch": branch_name,
+            "reason": "Repository is not a git checkout.",
+        }
     try:
-        import yfinance as yf
+        subprocess.run(
+            ["git", "checkout", "-B", branch_name],
+            cwd=repo_path,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60,
+        )
+        return {
+            "branch_prepared": True,
+            "branch": branch_name,
+            "reason": "Created or reset local replication branch before execution.",
+        }
     except Exception as exc:
-        return [], [], [f"yfinance unavailable: {exc}"]
-
-    rows = []
-    paths = []
-    for ticker in tickers[:10]:
-        try:
-            frame = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-        except Exception as exc:
-            warnings.append(f"yfinance failed for {ticker}: {exc}")
-            continue
-        if frame is None or frame.empty:
-            warnings.append(f"yfinance returned no rows for {ticker}.")
-            continue
-
-        csv_path = output_path / f"yfinance_{ticker}.csv"
-        try:
-            frame.to_csv(csv_path)
-            paths.append(csv_path)
-        except Exception:
-            pass
-
-        previous_close = None
-        for index, record in frame.reset_index().iterrows():
-            close_value = float(record.get("Close"))
-            date_value = record.get("Date")
-            if previous_close and previous_close > 0:
-                daily_log_return = math.log(close_value / previous_close)
-            else:
-                daily_log_return = 0.0
-            rows.append(
-                {
-                    "ticker": ticker,
-                    "date": str(date_value)[:10],
-                    "close": close_value,
-                    "daily_log_return": daily_log_return,
-                    "volume": float(record.get("Volume") or 0),
-                }
-            )
-            previous_close = close_value
-    return rows, paths, warnings
-
-
-def add_next_day_target(price_rows: list[dict], target_column: str) -> list[dict]:
-    grouped: dict[str, list[dict]] = {}
-    for row in price_rows:
-        ticker = str(row.get("ticker") or "UNKNOWN")
-        grouped.setdefault(ticker, []).append(row)
-
-    output_rows = []
-    for ticker_rows in grouped.values():
-        ticker_rows = sorted(ticker_rows, key=lambda row: str(row.get("date", "")))
-        for index, row in enumerate(ticker_rows[:-1]):
-            current_close = parse_float(row.get("close"))
-            next_close = parse_float(ticker_rows[index + 1].get("close"))
-            if current_close and next_close and current_close > 0:
-                row[target_column] = math.log(next_close / current_close)
-                output_rows.append(row)
-    return output_rows
-
-
-def aggregate_headline_sentiment(headline_rows: list[dict]) -> dict[tuple[str, str], dict]:
-    grouped: dict[tuple[str, str], list[float]] = {}
-    for row in headline_rows:
-        if not row:
-            continue
-        date_col = find_column(row, ["date", "datetime", "timestamp"])
-        text_col = find_column(row, ["headline", "title", "text", "article", "content"])
-        ticker_col = find_column(row, ["ticker", "symbol", "stock"])
-        if not date_col or not text_col:
-            continue
-        date_value = normalize_date(row.get(date_col))
-        ticker = str(row.get(ticker_col) or "MARKET").upper()
-        grouped.setdefault((ticker, date_value), []).append(simple_financial_sentiment(str(row.get(text_col))))
-
-    features = {}
-    for key, values in grouped.items():
-        features[key] = {
-            "sentiment_mean": statistics.mean(values),
-            "sentiment_disagreement": statistics.pstdev(values) if len(values) > 1 else 0.0,
-            "headline_count": len(values),
+        return {
+            "branch_prepared": False,
+            "branch": branch_name,
+            "reason": str(exc),
         }
-    return features
 
 
-def merge_sentiment_features(price_rows: list[dict], headline_rows: list[dict]) -> list[dict]:
-    sentiment_by_key = aggregate_headline_sentiment(headline_rows)
-    merged = []
-    for row in price_rows:
-        ticker = str(row.get("ticker") or "MARKET").upper()
-        date_value = normalize_date(row.get("date"))
-        sentiment = sentiment_by_key.get((ticker, date_value)) or sentiment_by_key.get(("MARKET", date_value)) or {}
-        merged_row = dict(row)
-        merged_row["sentiment_mean"] = sentiment.get("sentiment_mean", 0.0)
-        merged_row["sentiment_disagreement"] = sentiment.get("sentiment_disagreement", 0.0)
-        merged_row["headline_count"] = sentiment.get("headline_count", 0)
-        merged.append(merged_row)
-    return merged
+def safe_run_benchmark(repo_path: Path, entrypoints: list[str], output_dir: Path, data_files: list[str] | None = None) -> dict:
+    command = benchmark_command(repo_path, entrypoints)
+    generated_script = None
+    if not command:
+        generated_script = generated_replication_script(repo_path, data_files or [])
+        command = ["python", str(generated_script)]
 
-
-def run_financial_sentiment_timeseries_experiment(spec: dict, output_path: Path) -> str:
-    output_path.mkdir(parents=True, exist_ok=True)
-    target_column = str(spec.get("target_column") or "next_day_log_return")
-    warnings = []
-    output_files = []
-
-    price_rows, headline_rows, data_paths, inventory = rows_from_direct_financial_files(spec, output_path)
-    output_files.extend(str(path) for path in data_paths)
-
-    if not price_rows:
-        yf_rows, yf_paths, yf_warnings = load_yfinance_price_rows(spec, output_path)
-        price_rows.extend(yf_rows)
-        output_files.extend(str(path) for path in yf_paths)
-        warnings.extend(yf_warnings)
-
-    if not headline_rows:
-        warnings.append("No direct headline dataset was loaded. Kaggle/Hugging Face dataset pages require manual download, direct file URLs, or credentials.")
-
-    if not price_rows:
-        result = ExperimentResult(
-            status="DATA_LOADED_REDESIGN_NEEDED",
-            hypothesis_supported="UNDETERMINED",
-            redesign_needed=True,
-            summary=(
-                "financial_sentiment_timeseries could not run because no usable OHLCV price rows were loaded. "
-                "Provide a direct local/HTTP price CSV or install/configure yfinance with network access."
-            ),
-            dataset_name=str(spec.get("dataset_name", "Financial sentiment time series")),
-            dataset_url=", ".join(dataset_urls_from_spec(spec)),
-            runner_type="financial_sentiment_timeseries",
-            task_type=str(spec.get("task_type", "regression")),
-            target_column=target_column,
-            baseline=str(spec.get("baseline", "mean_prediction")),
-            metrics={"direct_files_loaded": len(data_paths), "inventoried_files": len(inventory)},
-            results={"warnings": warnings},
-            limitations=[
-                "This workflow runner supports local/direct OHLCV files or optional yfinance downloads.",
-                "Kaggle pages, FinBERT inference, LSTM/Transformer training, and Diebold-Mariano tests require extra dependencies and credentials.",
-            ],
-            output_files=output_files,
-        )
-        return write_outputs(output_path, result)
-
-    price_rows = add_next_day_target(price_rows, target_column)
-    merged_rows = merge_sentiment_features(price_rows, headline_rows)
-    merged_path = output_path / "financial_sentiment_panel.csv"
-    if merged_rows:
-        with merged_path.open("w", encoding="utf-8", newline="") as handle:
-            fieldnames = sorted({key for row in merged_rows for key in row.keys()})
-            writer = csv.DictWriter(handle, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(merged_rows)
-        output_files.append(str(merged_path))
-
-    if not merged_rows:
-        raise ValueError("No rows remained after next-day target construction.")
-
-    metrics, results = run_regression(merged_rows, target_column)
-    hypothesis_supported = decide_hypothesis_support(spec, metrics)
-    result = ExperimentResult(
-        status="COMPLETED",
-        hypothesis_supported=hypothesis_supported,
-        redesign_needed=False,
-        summary=(
-            "financial_sentiment_timeseries completed a runnable baseline using available OHLCV rows "
-            "and lightweight sentiment features when headline rows were available."
-        ),
-        dataset_name=str(spec.get("dataset_name", "Financial sentiment time series")),
-        dataset_url=", ".join(dataset_urls_from_spec(spec)),
-        runner_type="financial_sentiment_timeseries",
-        task_type="regression",
-        target_column=target_column,
-        baseline=str(spec.get("baseline", "mean_prediction")),
-        metrics=metrics | {
-            "price_rows": len(price_rows),
-            "headline_rows": len(headline_rows),
-            "panel_rows": len(merged_rows),
-        },
-        results=results | {"warnings": warnings},
-        limitations=[
-            "This runner currently executes a safe baseline, not full LSTM/Transformer training.",
-            "FinBERT is represented by a lightweight lexical sentiment fallback unless a future transformer inference module is added.",
-            "Kaggle dataset pages require credentials or direct downloaded files.",
-            "Diebold-Mariano tests and regime-stratified analysis are not implemented in this safe baseline runner yet.",
-        ],
-        output_files=[*output_files, str(output_path / "experiment_result.json"), str(output_path / "experiment_output.md")],
-    )
-    return write_outputs(output_path, result)
-
-
-def inspect_available_files_for_redesign(spec: dict, output_path: Path, reason: str) -> str | None:
-    readable_urls = [
-        url
-        for url in dataset_urls_from_spec(spec)
-        if url.upper() != "TO_VERIFY"
-        and (
-            (url.startswith("http://") or url.startswith("https://") or Path(url).exists())
-            and looks_like_supported_data_file(url)
-        )
-    ]
-    if not readable_urls:
-        return None
-
-    inspect_spec = dict(spec)
-    inspect_spec.update(
-        {
-            "runner_type": "universal_data_file",
-            "task_type": "inspect",
-            "dataset_url": readable_urls[0],
-            "dataset_urls": readable_urls,
-            "success_metric": "inspect",
+    if os.getenv("ALLOW_BENCHMARK_CODE_EXECUTION", "").lower() != "true":
+        return {
+            "executed": False,
+            "command_ready": command,
+            "generated_script": str(generated_script) if generated_script else None,
+            "reason": "Repo code execution is disabled. Set ALLOW_BENCHMARK_CODE_EXECUTION=true to run benchmark entrypoints.",
         }
-    )
+
+    branch_result = prepare_replication_branch(repo_path)
+    if not branch_result.get("branch_prepared"):
+        return {
+            "executed": False,
+            "branch": branch_result,
+            "reason": "Could not prepare isolated replication branch.",
+        }
+
     try:
-        rows, data_paths, inventory = load_universal_data_files(inspect_spec, output_path)
-    except Exception:
-        return None
+        completed = subprocess.run(
+            command,
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=600,
+        )
+        (output_dir / "benchmark_stdout.txt").write_text(completed.stdout, encoding="utf-8")
+        (output_dir / "benchmark_stderr.txt").write_text(completed.stderr, encoding="utf-8")
+        return {
+            "executed": True,
+            "branch": branch_result,
+            "command": command,
+            "returncode": completed.returncode,
+            "stdout_path": str(output_dir / "benchmark_stdout.txt"),
+            "stderr_path": str(output_dir / "benchmark_stderr.txt"),
+            "generated_script": str(generated_script) if generated_script else None,
+        }
+    except Exception as exc:
+        return {"executed": False, "branch": branch_result, "reason": str(exc), "command": command}
 
-    return universal_inventory_result(
-        inspect_spec,
-        output_path,
-        rows,
-        data_paths,
-        inventory,
-        reason,
-    )
 
+def build_replication_plan(spec: dict) -> list[str]:
+    return [
+        "Verify the cloned repository files, README, dependencies, benchmark scripts, and dataset instructions.",
+        "Use the repository's original dataset, variables/features, train/test split, and reported benchmark metrics when available.",
+        "Replicate the original benchmark first without modifying data or variables.",
+        "Run the new hypothesis comparison by adding one transparent extra comparison factor while preserving the old dataset and variables.",
+        "Compare original benchmark metrics against the modified replication metrics.",
+        "Report whether the new hypothesis is supported, unsupported, or undetermined.",
+    ]
 
 
 def run_experiment_stage(
     proposal_input: str | Path,
     output_dir: str | Path = "paper_runs/latest/experiment",
 ) -> str:
-    print("\n[Experiment Agent] Running experiment from proposal...")
+    print("\n[Experiment Agent] Preparing benchmark replication...")
     proposal = read_text_or_path(proposal_input)
     output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     try:
         spec = extract_execution_spec(proposal)
     except Exception as exc:
-        return redesign_result(proposal, output_path, str(exc))
-    spec = normalize_execution_spec(spec)
+        spec = {"runner_type": "BENCHMARK_REPLICATION", "error": str(exc)}
 
-    run_parallel_experiment_agents(spec, proposal, output_path)
+    repo_path = Path(str(spec.get("local_repo_path", "")))
+    entrypoints = [str(item) for item in spec.get("benchmark_entrypoints", [])]
+    local_dataset_paths = [str(item) for item in spec.get("local_dataset_paths", [])]
+    repo_exists = repo_path.exists()
+    datasets_found = list_existing(local_dataset_paths)
+    repo_data_files = list_existing([str(repo_path / item) for item in spec.get("repo_data_files", [])]) if repo_exists else []
+    generated_data_files = [
+        str(Path(path).relative_to(repo_path)) if repo_exists and Path(path).is_relative_to(repo_path) else str(path)
+        for path in [*repo_data_files, *datasets_found]
+    ]
 
-    redesign_reason = needs_redesign(spec)
-    if redesign_reason:
-        inspected = inspect_available_files_for_redesign(spec, output_path, redesign_reason)
-        if inspected:
-            return inspected
-        return redesign_result(proposal, output_path, redesign_reason, spec)
+    run_result = (
+        safe_run_benchmark(repo_path, entrypoints, output_path, generated_data_files)
+        if repo_exists
+        else {"executed": False, "reason": "Cloned repository path does not exist."}
+    )
 
-    try:
-        runner_type = str(spec.get("runner_type", "universal_tabular_csv")).lower()
-        if runner_type == "universal_data_file":
-            return run_universal_data_file_experiment(spec, output_path, proposal)
-        if runner_type == "financial_sentiment_timeseries":
-            return run_financial_sentiment_timeseries_experiment(spec, output_path)
+    has_data = bool(datasets_found or repo_data_files)
+    has_entrypoints = bool(entrypoints)
+    if not repo_exists:
+        status = "REPLICATION_NEEDS_REDESIGN"
+    elif has_entrypoints and has_data:
+        status = "REPLICATION_READY"
+    elif has_data:
+        status = "REPLICATION_READY_WITH_GENERATED_SCRIPT"
+    elif has_entrypoints:
+        status = "REPLICATION_NEEDS_DATA"
+    else:
+        status = "REPLICATION_NEEDS_REDESIGN"
+    result = {
+        "status": status,
+        "hypothesis_supported": "UNDETERMINED",
+        "redesign_needed": status != "REPLICATION_READY",
+        "runner_type": spec.get("runner_type", "BENCHMARK_REPLICATION"),
+        "repo_path": str(repo_path),
+        "repo_exists": repo_exists,
+        "benchmark_entrypoints": entrypoints,
+        "datasets_found": datasets_found,
+        "repo_data_files_found": repo_data_files[:20],
+        "metrics": spec.get("metrics", []),
+        "new_hypothesis": spec.get("new_hypothesis", "TO_VERIFY"),
+        "replication_plan": build_replication_plan(spec),
+        "run_result": run_result,
+        "limitations": [
+            "Arbitrary benchmark repo code is not executed unless ALLOW_BENCHMARK_CODE_EXECUTION=true.",
+            "Dependency installation is not automatic.",
+            "If the repository does not include direct data files or clear dataset instructions, the benchmark must be completed manually or with a repo-specific runner.",
+        ],
+    }
+    (output_path / "experiment_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 
-        rows, data_paths = load_csvs(spec, output_path)
-        target_column = str(spec["target_column"]).strip()
-        if target_column.upper() in {"", "TO_VERIFY", "AUTO_TARGET"}:
-            target_column = infer_target_column(rows, proposal + "\n" + json.dumps(spec))
-        if target_column not in rows[0]:
-            raise ValueError(f"Target column '{target_column}' does not exist in the CSV header.")
+    markdown = f"""# Experiment Results
 
-        task_type = infer_task_type(rows, target_column, str(spec["task_type"]))
-        if task_type == "classification":
-            metrics, results = run_classification(rows, target_column)
-        else:
-            metrics, results = run_regression(rows, target_column)
+## Status
+{status}
 
-        hypothesis_supported = decide_hypothesis_support(spec, metrics)
-        result = ExperimentResult(
-            status="COMPLETED",
-            hypothesis_supported=hypothesis_supported,
-            redesign_needed=False,
-            summary=(
-                "Experiment completed using the executable proposal spec. "
-                "Results are produced from the loaded dataset and baseline evaluation."
-            ),
-            dataset_name=str(spec.get("dataset_name", "Unknown")),
-            dataset_url=", ".join(dataset_urls_from_spec(spec)),
-            runner_type=str(spec.get("runner_type", "universal_tabular_csv")),
-            task_type=task_type,
-            target_column=target_column,
-            baseline=str(spec.get("baseline", "")),
-            metrics=metrics,
-            results=results,
-            limitations=[
-                "The universal_tabular_csv runner supports direct/local CSV classification/regression baselines only.",
-                "More advanced models require a dedicated safe runner.",
-            ],
-            output_files=[*(str(path) for path in data_paths), str(output_path / "experiment_result.json"), str(output_path / "experiment_output.md")],
-        )
-        return write_outputs(output_path, result)
-    except Exception as exc:
-        return redesign_result(proposal, output_path, str(exc), spec)
+## Hypothesis Supported
+UNDETERMINED
+
+## Summary
+Prepared a benchmark-replication experiment from the selected GitHub repository and dataset sources. The original benchmark should be replicated first, then compared against the new hypothesis while preserving the old dataset, variables, and metrics.
+
+## Repository
+- Path: {repo_path}
+- Exists: {repo_exists}
+
+## Dataset
+- Downloaded dataset files: {len(datasets_found)}
+- Repository data files found: {len(repo_data_files)}
+
+## Benchmark Entrypoints
+{chr(10).join(f"- {item}" for item in entrypoints) if entrypoints else "- TO_IDENTIFY"}
+
+## Metrics
+{chr(10).join(f"- {item}" for item in spec.get("metrics", [])) if spec.get("metrics") else "- TO_IDENTIFY"}
+
+## New Hypothesis
+{spec.get("new_hypothesis", "TO_VERIFY")}
+
+## Replication Plan
+{chr(10).join(f"- {item}" for item in result["replication_plan"])}
+
+## Execution
+{json.dumps(run_result, indent=2)}
+
+## Branch Safety
+If benchmark execution is enabled, the cloned repository is checked out to a local branch before running code. Default branch name: `autoresearch-replication`. Override with `BENCHMARK_REPLICATION_BRANCH`.
+"""
+    (output_path / "experiment_output.md").write_text(markdown, encoding="utf-8")
+    return markdown
 
 
 if __name__ == "__main__":
