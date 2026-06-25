@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -823,6 +823,22 @@ def validate_proposal_output(text: str, public_data_sources: str = "") -> tuple[
     if missing_keys:
         return False, "EXPERIMENT EXECUTION SPEC is missing keys: " + ", ".join(missing_keys)
 
+    supported_runners = {
+        "universal_tabular_csv",
+        "universal_data_file",
+        "financial_sentiment_timeseries",
+        "event_graph_classification",
+        "needs_new_runner",
+    }
+    supported_tasks = {"classification", "regression", "auto", "inspect", "to_verify"}
+    supported_directions = {"greater_or_equal", "less_or_equal", "to_verify"}
+    if str(spec.get("runner_type", "")).strip().lower() not in supported_runners:
+        return False, "EXPERIMENT EXECUTION SPEC has unsupported runner_type."
+    if str(spec.get("task_type", "")).strip().lower() not in supported_tasks:
+        return False, "EXPERIMENT EXECUTION SPEC has unsupported task_type."
+    if str(spec.get("threshold_direction", "")).strip().lower() not in supported_directions:
+        return False, "EXPERIMENT EXECUTION SPEC has unsupported threshold_direction."
+
     if str(spec.get("runner_type", "")).lower() == "universal_tabular_csv" and text_marks_dataset_as_unsuitable(text):
         return False, "EXPERIMENT EXECUTION SPEC uses an unsuitable smoke-test CSV as the primary dataset."
 
@@ -1103,6 +1119,7 @@ EXPERIMENT EXECUTION SPEC:
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Orchestrating proposal subagents...")
     deep_literature_text = read_text_or_path(deep_literature_review)
+    write_debug_outputs = os.getenv("WRITE_PROPOSAL_DEBUG", "").lower() == "true"
 
     try:
         try:
@@ -1121,30 +1138,33 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
         proposal_dir = Path("paper_runs/latest/proposal")
         proposal_dir.mkdir(parents=True, exist_ok=True)
 
-        print("[Proposal Agent] Running Hypothesis Agent and Dataset Agent in parallel...")
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            hypothesis_future = executor.submit(
-                run_hypothesis_agent,
-                research_question,
-                deep_literature_text,
-            )
-            dataset_future = executor.submit(
-                run_dataset_agent,
-                research_question,
-                proposal_dir / "dataset",
-            )
-
-            hypothesis_output = hypothesis_future.result()
-            dataset_report = dataset_future.result()
-
-        (proposal_dir / "hypothesis_output.md").write_text(hypothesis_output, encoding="utf-8")
+        print("[Proposal Agent] Running Dataset Agent...")
+        dataset_report = run_dataset_agent(
+            research_question,
+            proposal_dir / "dataset" if write_debug_outputs else None,
+        )
 
         print("[Proposal Agent] Running Schema Agent...")
-        schema_report = run_schema_agent(dataset_report, proposal_dir / "schema")
+        schema_report = run_schema_agent(
+            dataset_report,
+            proposal_dir / "schema" if write_debug_outputs else None,
+            research_question,
+        )
+
+        print("[Proposal Agent] Running Hypothesis Agent with dataset/schema context...")
+        hypothesis_output = run_hypothesis_agent(
+            research_question,
+            deep_literature_text,
+            dataset_report,
+            schema_report,
+        )
+        if write_debug_outputs:
+            (proposal_dir / "hypothesis_output.md").write_text(hypothesis_output, encoding="utf-8")
 
         print("[Proposal Agent] Running Analysis Agent...")
         analysis_spec = run_analysis_agent(hypothesis_output, dataset_report, schema_report)
-        (proposal_dir / "analysis_spec.json").write_text(json.dumps(analysis_spec, indent=2), encoding="utf-8")
+        if write_debug_outputs:
+            (proposal_dir / "analysis_spec.json").write_text(json.dumps(analysis_spec, indent=2), encoding="utf-8")
 
         final_proposal = run_final_agent_prop(
             research_question,
@@ -1153,7 +1173,8 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
             schema_report,
             analysis_spec,
         )
-        (proposal_dir / "final_proposal.md").write_text(final_proposal, encoding="utf-8")
+        if write_debug_outputs:
+            (proposal_dir / "final_proposal.md").write_text(final_proposal, encoding="utf-8")
 
         public_sources_text = dataset_report_to_prompt_text(dataset_report)
         is_valid, reason = validate_proposal_output(final_proposal, public_sources_text)
@@ -1165,7 +1186,8 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
             repaired_is_valid, repaired_reason = validate_proposal_output(repaired, public_sources_text)
             if repaired_is_valid:
                 print(f"Final proposal needed local execution-spec repair. Reason: {reason}")
-                (proposal_dir / "final_proposal.md").write_text(repaired, encoding="utf-8")
+                if write_debug_outputs:
+                    (proposal_dir / "final_proposal.md").write_text(repaired, encoding="utf-8")
                 return repaired
             print(f"Final proposal repair was not enough. Reason: {repaired_reason}")
 

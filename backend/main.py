@@ -44,8 +44,6 @@ def write_text(path: Path, text: str) -> Path:
 def main():
     topic = input("Enter your research topic: ")
     output_dir = Path("paper_runs/latest")
-    stage_dir = output_dir / "stage_outputs"
-    stage_dir.mkdir(parents=True, exist_ok=True)
     state = PipelineState(output_dir)
     state.set_metadata("topic", topic)
 
@@ -71,7 +69,7 @@ def main():
     print(lit_output)
 
     print("\n--- Research Question Agent ---")
-    research_questions_output = run_research_question_stage(topic, lit_path)
+    research_questions_output = run_research_question_stage(topic, lit_output)
     research_questions_path = state.write_stage_output("research_questions", research_questions_output)
     print(research_questions_output)
 
@@ -98,12 +96,12 @@ def main():
         deep_lit_path = state.write_stage_output("deep_literature", "Deep literature placeholder.", status="placeholder")
 
     print("\n--- Proposal Agent ---")
-    proposal_output = run_proposal_stage(selected_question, deep_lit_path)
+    proposal_output = run_proposal_stage(selected_question, state.read_active_output("deep_literature"))
     proposal_path = state.write_stage_output("proposal", proposal_output)
     print(proposal_output)
     
     print("\n--- Experiment Agent ---")
-    experiment_output = run_experiment_stage(proposal_path, output_dir / "experiment")
+    experiment_output = run_experiment_stage(proposal_output, output_dir / "experiment")
     experiment_status = "redesign_needed" if "REDESIGN_NEEDED" in experiment_output else "generated"
     experiment_path = state.write_stage_output("experiment", experiment_output, status=experiment_status)
     print(experiment_output)
@@ -114,19 +112,19 @@ def main():
             "--prompt",
             topic,
             "--pi-output",
-            str(pi_path),
+            pi_output,
             "--part1-literature",
-            str(lit_path),
+            lit_output,
             "--research-questions",
-            str(research_questions_path),
+            research_questions_output,
             "--research-question",
-            str(selected_question_path),
+            selected_question,
             "--deep-literature",
-            str(deep_lit_path),
+            state.read_active_output("deep_literature"),
             "--proposal",
-            str(proposal_path),
+            proposal_output,
             "--experiment",
-            str(experiment_path),
+            experiment_output,
             "--out",
             str(output_dir),
             "--iterations",

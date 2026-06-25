@@ -157,6 +157,68 @@ SUPPORTED_RUNNER_TYPES = {
 SUPPORTED_TASK_TYPES = {"classification", "regression", "auto", "inspect"}
 SUPPORTED_METRICS = {"accuracy", "mae", "rmse", "r2", "none", "inspect"}
 SUPPORTED_DATA_EXTENSIONS = {".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".zip"}
+TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "latin-1", "cp1252")
+GENERIC_TARGET_HINTS = (
+    "target",
+    "label",
+    "class",
+    "category",
+    "outcome",
+    "result",
+    "winner",
+    "ftr",
+    "full_time_result",
+    "y",
+)
+CONTEXT_STOPWORDS = {
+    "about",
+    "across",
+    "after",
+    "analysis",
+    "and",
+    "based",
+    "between",
+    "can",
+    "data",
+    "dataset",
+    "datasets",
+    "does",
+    "effect",
+    "from",
+    "how",
+    "into",
+    "model",
+    "models",
+    "predict",
+    "prediction",
+    "public",
+    "research",
+    "the",
+    "this",
+    "through",
+    "using",
+    "what",
+    "when",
+    "with",
+}
+DOMAIN_TARGET_HINTS = {
+    "injury": ["injury", "injured", "injury_status", "injury_label", "is_injured"],
+    "injuries": ["injury", "injured", "injury_status", "injury_label", "is_injured"],
+    "sport": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
+    "sports": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
+    "match": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
+    "game": ["winner", "result", "outcome", "home_win", "away_win", "score"],
+    "win": ["winner", "win", "home_win", "away_win", "result", "outcome"],
+    "winner": ["winner", "win", "result", "outcome"],
+    "return": ["return", "returns", "excess_return", "next_return", "target_return"],
+    "returns": ["return", "returns", "excess_return", "next_return", "target_return"],
+    "price": ["price", "close", "adj_close", "target_price", "next_price"],
+    "sentiment": ["sentiment", "label", "polarity", "class"],
+    "classification": ["label", "class", "category", "target", "outcome"],
+    "diagnosis": ["diagnosis", "disease", "condition", "label", "class"],
+    "risk": ["risk", "default", "failure", "event", "outcome"],
+    "rating": ["rating", "score", "target", "outcome"],
+}
 NON_DATA_FILE_MARKERS = (
     ".babelrc",
     ".claude/",
@@ -181,6 +243,67 @@ NON_DATA_FILE_MARKERS = (
     "tsconfig",
     "yarn.lock",
 )
+
+
+def normalize_column_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
+def context_tokens(context: str) -> list[str]:
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_]{2,}", context.lower())
+    return [
+        token
+        for token in dict.fromkeys(tokens)
+        if token not in CONTEXT_STOPWORDS and len(token) <= 32
+    ]
+
+
+def target_hints_for_context(context: str) -> list[str]:
+    hints = list(GENERIC_TARGET_HINTS)
+    for token in context_tokens(context):
+        hints.append(token)
+        hints.extend(DOMAIN_TARGET_HINTS.get(token, []))
+    return list(dict.fromkeys(normalize_column_name(hint) for hint in hints if hint))
+
+
+def normalize_execution_spec(spec: dict) -> dict:
+    normalized = dict(spec or {})
+    runner_type = str(normalized.get("runner_type", "")).strip().lower()
+    task_type = str(normalized.get("task_type", "")).strip().lower()
+    threshold_direction = str(normalized.get("threshold_direction", "")).strip().lower()
+
+    urls = dataset_urls_from_spec(normalized)
+    has_direct_data = any(looks_like_supported_data_file(url) or Path(url).exists() for url in urls)
+
+    if runner_type in {"standard", "default", "general", "generic", "safe", "basic"}:
+        normalized["runner_type"] = "universal_data_file" if has_direct_data else "NEEDS_NEW_RUNNER"
+    elif runner_type:
+        normalized["runner_type"] = runner_type
+
+    if task_type not in SUPPORTED_TASK_TYPES:
+        normalized["task_type"] = "auto" if has_direct_data else "inspect"
+    else:
+        normalized["task_type"] = task_type
+
+    feature_columns = normalized.get("feature_columns", [])
+    if not isinstance(feature_columns, list):
+        feature_columns = [str(feature_columns)]
+    normalized["feature_columns"] = [
+        "AUTO_NUMERIC" if str(column).strip().upper() in {"AUTO_DETECT", "AUTO", "AUTO_FEATURES"} else column
+        for column in feature_columns
+    ]
+
+    if threshold_direction in {"above", "higher", "greater", "greater_than", "at_least", ">=", ">"}:
+        normalized["threshold_direction"] = "greater_or_equal"
+    elif threshold_direction in {"below", "lower", "less", "less_than", "at_most", "<=", "<"}:
+        normalized["threshold_direction"] = "less_or_equal"
+    elif threshold_direction:
+        normalized["threshold_direction"] = threshold_direction
+
+    if str(normalized.get("target_column", "")).strip().upper() in {"", "TO_VERIFY"} and has_direct_data:
+        normalized["target_column"] = "AUTO_TARGET"
+
+    return normalized
 
 
 def needs_redesign(spec: dict) -> str | None:
@@ -283,9 +406,8 @@ def load_csvs(spec: dict, output_dir: Path) -> tuple[list[dict], list[Path]]:
             failures.append(f"{dataset_url}: {exc}")
             continue
 
-        with data_path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            rows = [dict(row, source_file=data_path.name) for row in reader]
+        reader = csv.DictReader(read_text_with_fallback(data_path).splitlines())
+        rows = [dict(row, source_file=data_path.name) for row in reader]
         all_rows.extend(rows)
         data_paths.append(data_path)
 
@@ -330,12 +452,28 @@ def download_data_files(spec: dict, output_dir: Path) -> list[Path]:
     return data_paths
 
 
+def read_text_with_fallback(path: Path) -> str:
+    last_error: Exception | None = None
+    for encoding in TEXT_ENCODINGS:
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeDecodeError as exc:
+            last_error = exc
+    raise UnicodeDecodeError(
+        "unknown",
+        b"",
+        0,
+        1,
+        f"Could not decode {path} with {', '.join(TEXT_ENCODINGS)}. Last error: {last_error}",
+    )
+
+
 def read_delimited_rows(path: Path, delimiter: str | None = None) -> list[dict]:
     if delimiter is None:
         delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter=delimiter)
-        return [dict(row, source_file=path.name) for row in reader]
+    text = read_text_with_fallback(path)
+    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
+    return [dict(row, source_file=path.name) for row in reader]
 
 
 def json_to_rows(payload: object, source_name: str) -> list[dict]:
@@ -352,22 +490,21 @@ def json_to_rows(payload: object, source_name: str) -> list[dict]:
 
 
 def read_json_rows(path: Path) -> list[dict]:
-    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    payload = json.loads(read_text_with_fallback(path))
     return json_to_rows(payload, path.name)
 
 
 def read_jsonl_rows(path: Path) -> list[dict]:
     rows = []
-    with path.open("r", encoding="utf-8-sig") as handle:
-        for line_number, line in enumerate(handle, 1):
-            line = line.strip()
-            if not line:
-                continue
-            payload = json.loads(line)
-            if isinstance(payload, dict):
-                rows.append(dict(payload, source_file=path.name))
-            else:
-                rows.append({"value": payload, "line_number": line_number, "source_file": path.name})
+    for line_number, line in enumerate(read_text_with_fallback(path).splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        payload = json.loads(line)
+        if isinstance(payload, dict):
+            rows.append(dict(payload, source_file=path.name))
+        else:
+            rows.append({"value": payload, "line_number": line_number, "source_file": path.name})
     return rows
 
 
@@ -447,52 +584,55 @@ def load_universal_data_files(spec: dict, output_dir: Path) -> tuple[list[dict],
     return all_rows, loaded_paths, inventory
 
 
-def infer_target_column(rows: list[dict]) -> str:
+def infer_target_column(rows: list[dict], context: str = "") -> str:
     if not rows:
         raise ValueError("Cannot infer target column from an empty dataset.")
     columns = [column for column in rows[0].keys() if column != "source_file"]
     if not columns:
         raise ValueError("Cannot infer target column because the CSV has no usable columns.")
 
-    preferred_names = [
-        "injury",
-        "injured",
-        "injury_label",
-        "injury_status",
-        "injury_next_7d",
-        "target_injury_next_7d",
-        "injured_next_week",
-        "injured_next_7d",
-        "is_injured",
-        "target",
-        "label",
-        "class",
-        "category",
-        "outcome",
-        "result",
-        "ftr",
-        "full_time_result",
-        "y",
-    ]
-    normalized_columns = {
-        re.sub(r"[^a-z0-9]+", "_", column.lower()).strip("_"): column
-        for column in columns
-    }
-    for preferred_name in preferred_names:
-        if preferred_name in normalized_columns:
-            return normalized_columns[preferred_name]
-
+    hints = target_hints_for_context(context)
     usable_columns = []
     for column in columns:
         values = [row.get(column, "") for row in rows[:500] if str(row.get(column, "")).strip()]
         if values:
-            usable_columns.append((column, len(set(values))))
+            usable_columns.append((column, len(set(values)), len(values)))
     if not usable_columns:
         raise ValueError("Cannot infer target column because all columns are empty.")
 
+    scored = []
+    for column, unique_count, value_count in usable_columns:
+        normalized = normalize_column_name(column)
+        score = 0
+        for hint in hints:
+            if normalized == hint:
+                score += 120
+            elif normalized.endswith(f"_{hint}") or normalized.startswith(f"{hint}_"):
+                score += 80
+            elif hint in normalized:
+                score += 45
+
+        if any(generic in normalized for generic in GENERIC_TARGET_HINTS):
+            score += 25
+        if 1 < unique_count <= 50:
+            score += 20
+        if unique_count == 2:
+            score += 15
+        if unique_count > max(50, value_count * 0.8):
+            score -= 45
+        if any(marker in normalized for marker in ("id", "date", "time", "name", "url", "path")):
+            score -= 40
+        if normalized in {"source_file", "index"}:
+            score -= 100
+        scored.append((score, column, unique_count))
+
+    scored.sort(key=lambda item: (-item[0], columns.index(item[1])))
+    if scored and scored[0][0] > 0:
+        return scored[0][1]
+
     categorical_candidates = [
         (column, unique_count)
-        for column, unique_count in usable_columns
+        for column, unique_count, _ in usable_columns
         if 1 < unique_count <= 50
     ]
     if categorical_candidates:
@@ -741,7 +881,7 @@ def universal_inventory_result(
     return write_outputs(output_dir, result)
 
 
-def run_universal_data_file_experiment(spec: dict, output_path: Path) -> str:
+def run_universal_data_file_experiment(spec: dict, output_path: Path, context: str = "") -> str:
     rows, data_paths, inventory = load_universal_data_files(spec, output_path)
     target_column = str(spec.get("target_column", "")).strip()
     task_type_requested = str(spec.get("task_type", "inspect")).lower()
@@ -758,7 +898,7 @@ def run_universal_data_file_experiment(spec: dict, output_path: Path) -> str:
 
     if target_column.upper() in {"", "TO_VERIFY", "AUTO_TARGET"}:
         try:
-            target_column = infer_target_column(rows)
+            target_column = infer_target_column(rows, context + "\n" + json.dumps(spec))
             spec = dict(spec)
             spec["target_column"] = target_column
             if task_type_requested == "inspect":
@@ -1181,6 +1321,7 @@ def run_experiment_stage(
         spec = extract_execution_spec(proposal)
     except Exception as exc:
         return redesign_result(proposal, output_path, str(exc))
+    spec = normalize_execution_spec(spec)
 
     run_parallel_experiment_agents(spec, proposal, output_path)
 
@@ -1194,14 +1335,14 @@ def run_experiment_stage(
     try:
         runner_type = str(spec.get("runner_type", "universal_tabular_csv")).lower()
         if runner_type == "universal_data_file":
-            return run_universal_data_file_experiment(spec, output_path)
+            return run_universal_data_file_experiment(spec, output_path, proposal)
         if runner_type == "financial_sentiment_timeseries":
             return run_financial_sentiment_timeseries_experiment(spec, output_path)
 
         rows, data_paths = load_csvs(spec, output_path)
         target_column = str(spec["target_column"]).strip()
         if target_column.upper() in {"", "TO_VERIFY", "AUTO_TARGET"}:
-            target_column = infer_target_column(rows)
+            target_column = infer_target_column(rows, proposal + "\n" + json.dumps(spec))
         if target_column not in rows[0]:
             raise ValueError(f"Target column '{target_column}' does not exist in the CSV header.")
 

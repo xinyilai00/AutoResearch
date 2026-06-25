@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 try:
@@ -17,13 +18,19 @@ You are the Hypothesis Agent in an autonomous research pipeline.
 Input:
 - selected research question
 - deep literature review
+- dataset candidates and schema inspection results, when available
 
 Job:
 Create only the hypothesis-level proposal plan. Do not search datasets and do not create an execution spec.
+The hypothesis must be testable using the provided dataset/schema context.
 
 Rules:
 - Treat "experiment" as a public-data analysis experiment.
 - Do not propose lab experiments, surveys, physical sensor deployments, or new private data collection.
+- Prefer a hypothesis that uses real dataset columns or target candidates from the schema context.
+- If a schema target candidate exists, choose one and name it as the dependent variable.
+- If no target candidate exists but rows loaded, use AUTO_TARGET and explain that the Experiment Agent should infer the target after loading.
+- If no readable schema exists, clearly mark the hypothesis as provisional.
 - State what data characteristics are required for the analysis to be executable.
 - Do not fabricate citations, datasets, statistics, or results.
 - Use author-year citations only if they are present in the input.
@@ -89,7 +96,23 @@ Fallback reason: {reason}
 """
 
 
-def run_hypothesis_agent(research_question: str, deep_literature_review: str) -> str:
+def schema_context_text(dataset_report: dict | None, schema_report: dict | None) -> str:
+    if not dataset_report and not schema_report:
+        return "No dataset/schema context was provided."
+    return (
+        "Dataset Agent output:\n"
+        f"{json.dumps(dataset_report or {}, indent=2)}\n\n"
+        "Schema Agent output:\n"
+        f"{json.dumps(schema_report or {}, indent=2)}"
+    )
+
+
+def run_hypothesis_agent(
+    research_question: str,
+    deep_literature_review: str,
+    dataset_report: dict | None = None,
+    schema_report: dict | None = None,
+) -> str:
     prompt = f"""{HYPOTHESIS_PROMPT}
 
 Selected research question:
@@ -97,6 +120,9 @@ Selected research question:
 
 Deep literature review:
 {deep_literature_review}
+
+Dataset and schema context:
+{schema_context_text(dataset_report, schema_report)}
 """
     try:
         return call_agent_api(prompt, "Hypothesis", HYPOTHESIS_PRINCIPAL_ID)

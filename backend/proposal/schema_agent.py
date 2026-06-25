@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 try:
@@ -10,7 +11,7 @@ except ImportError:
     import experiment_agent
 
 
-TARGET_HINTS = (
+GENERIC_TARGET_HINTS = (
     "target",
     "label",
     "class",
@@ -22,6 +23,95 @@ TARGET_HINTS = (
     "ftr",
     "y",
 )
+
+CONTEXT_STOPWORDS = {
+    "about",
+    "across",
+    "after",
+    "analysis",
+    "and",
+    "based",
+    "between",
+    "can",
+    "data",
+    "dataset",
+    "datasets",
+    "does",
+    "effect",
+    "from",
+    "how",
+    "into",
+    "model",
+    "models",
+    "predict",
+    "prediction",
+    "public",
+    "research",
+    "the",
+    "this",
+    "through",
+    "using",
+    "what",
+    "when",
+    "with",
+}
+
+DOMAIN_TARGET_HINTS = {
+    "injury": ["injury", "injured", "injury_status", "injury_label", "is_injured"],
+    "injuries": ["injury", "injured", "injury_status", "injury_label", "is_injured"],
+    "sport": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
+    "sports": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
+    "match": ["winner", "result", "outcome", "home_win", "away_win", "ftr", "score"],
+    "game": ["winner", "result", "outcome", "home_win", "away_win", "score"],
+    "win": ["winner", "win", "home_win", "away_win", "result", "outcome"],
+    "winner": ["winner", "win", "result", "outcome"],
+    "return": ["return", "returns", "excess_return", "next_return", "target_return"],
+    "returns": ["return", "returns", "excess_return", "next_return", "target_return"],
+    "price": ["price", "close", "adj_close", "target_price", "next_price"],
+    "sentiment": ["sentiment", "label", "polarity", "class"],
+    "classification": ["label", "class", "category", "target", "outcome"],
+    "diagnosis": ["diagnosis", "disease", "condition", "label", "class"],
+    "risk": ["risk", "default", "failure", "event", "outcome"],
+    "rating": ["rating", "score", "target", "outcome"],
+}
+
+
+def normalize_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
+def context_tokens(context: str) -> list[str]:
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_]{2,}", context.lower())
+    return [
+        token
+        for token in dict.fromkeys(tokens)
+        if token not in CONTEXT_STOPWORDS and len(token) <= 32
+    ]
+
+
+def target_hints_for_context(context: str) -> list[str]:
+    hints = list(GENERIC_TARGET_HINTS)
+    tokens = context_tokens(context)
+    for token in tokens:
+        hints.append(token)
+        hints.extend(DOMAIN_TARGET_HINTS.get(token, []))
+    return list(dict.fromkeys(normalize_name(hint) for hint in hints if hint))
+
+
+def dataset_context(dataset_report: dict) -> str:
+    parts = []
+    for candidate in dataset_report.get("dataset_candidates", []):
+        parts.extend(
+            [
+                str(candidate.get("name", "")),
+                str(candidate.get("source", "")),
+                str(candidate.get("description", "")),
+                str(candidate.get("page_url", "")),
+            ]
+        )
+        for item in candidate.get("direct_files", []):
+            parts.extend([str(item.get("url", "")), str(item.get("path", ""))])
+    return "\n".join(parts)
 
 
 def flatten_dataset_urls(dataset_report: dict, limit: int = 5) -> list[str]:
@@ -36,17 +126,32 @@ def flatten_dataset_urls(dataset_report: dict, limit: int = 5) -> list[str]:
     return list(dict.fromkeys(urls))
 
 
-def target_candidates(columns: list[str]) -> list[str]:
-    lowered = {column.lower(): column for column in columns}
-    candidates = []
-    for hint in TARGET_HINTS:
-        for lower, original in lowered.items():
-            if hint == lower or hint in lower:
-                candidates.append(original)
-    return list(dict.fromkeys(candidates))
+def target_candidates(columns: list[str], context: str = "") -> list[str]:
+    hints = target_hints_for_context(context)
+    scored = []
+    for column in columns:
+        normalized = normalize_name(column)
+        if not normalized or normalized in {"source_file", "id", "index"}:
+            continue
+        score = 0
+        for hint in hints:
+            if normalized == hint:
+                score += 100
+            elif normalized.endswith(f"_{hint}") or normalized.startswith(f"{hint}_"):
+                score += 70
+            elif hint in normalized:
+                score += 40
+        if any(generic in normalized for generic in GENERIC_TARGET_HINTS):
+            score += 20
+        if any(marker in normalized for marker in ("id", "date", "time", "name", "url", "path")):
+            score -= 30
+        if score > 0:
+            scored.append((score, column))
+    scored.sort(key=lambda item: (-item[0], columns.index(item[1])))
+    return list(dict.fromkeys(column for _, column in scored))
 
 
-def inspect_dataset_urls(dataset_urls: list[str], output_dir: str | Path) -> dict:
+def inspect_dataset_urls(dataset_urls: list[str], output_dir: str | Path, context: str = "") -> dict:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     spec = {
@@ -76,7 +181,7 @@ def inspect_dataset_urls(dataset_urls: list[str], output_dir: str | Path) -> dic
                 "type": item.get("type"),
                 "rows": item.get("rows"),
                 "columns": columns,
-                "target_candidates": target_candidates(columns),
+                "target_candidates": target_candidates(columns, context),
             }
         )
 
@@ -104,14 +209,20 @@ def schema_report_to_prompt_text(report: dict) -> str:
     return "\n".join(lines)
 
 
-def run_schema_agent(dataset_report: dict, output_dir: str | Path = "paper_runs/latest/proposal/schema") -> dict:
+def run_schema_agent(
+    dataset_report: dict,
+    output_dir: str | Path | None = "paper_runs/latest/proposal/schema",
+    research_question: str = "",
+) -> dict:
     print("[Schema Agent] Inspecting readable candidate schemas...")
     urls = flatten_dataset_urls(dataset_report)
-    report = inspect_dataset_urls(urls, output_dir)
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    (output_path / "schema_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    (output_path / "schema_report.md").write_text(schema_report_to_prompt_text(report), encoding="utf-8")
+    output_path = Path(output_dir) if output_dir is not None else Path("/private/tmp/autoresearch-schema")
+    context = research_question + "\n" + dataset_context(dataset_report)
+    report = inspect_dataset_urls(urls, output_path, context)
+    if output_dir is not None:
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / "schema_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        (output_path / "schema_report.md").write_text(schema_report_to_prompt_text(report), encoding="utf-8")
     return report
 
 

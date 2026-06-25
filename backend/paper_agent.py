@@ -217,6 +217,8 @@ def normalize_paper_draft(draft: str, stage_inputs: str = "") -> str:
 def read_optional_text(value: str | None, label: str) -> str:
     if not value:
         return ""
+    if "\n" in value or len(value) > 500:
+        return value.strip()
     path = Path(value)
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
@@ -275,9 +277,11 @@ def run_agent(args: argparse.Namespace) -> Path:
     source, stage_inputs = read_source(args)
     output_dir = Path(args.out).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    write_debug_outputs = os.getenv("WRITE_PAPER_DEBUG", "").lower() == "true"
 
-    write(output_dir / "source.md", source)
-    write(output_dir / "stage_inputs.json", json.dumps(stage_inputs, indent=2))
+    if write_debug_outputs:
+        write(output_dir / "source.md", source)
+        write(output_dir / "stage_inputs.json", json.dumps(stage_inputs, indent=2))
 
     # Step 1: Planner
     print("[Paper Agent] Running planner...")
@@ -291,8 +295,8 @@ def run_agent(args: argparse.Namespace) -> Path:
         experiment=stage_inputs.get("experiment", ""),
     )
 
-    # DEBUG: save planner output
-    write(output_dir / "planner_output.json", json.dumps(planner_briefs, indent=2))
+    if write_debug_outputs:
+        write(output_dir / "planner_output.json", json.dumps(planner_briefs, indent=2))
 
     # Step 2: Inner agents in parallel
     print("[Paper Agent] Running inner agents in parallel...")
@@ -310,13 +314,13 @@ def run_agent(args: argparse.Namespace) -> Path:
         results = futures["results"].result()
         conclusion = futures["conclusion"].result()
 
-    # Save individual section outputs for debugging
-    paper_sections_dir = output_dir / "paper_sections"
-    write(paper_sections_dir / "intro.md", intro)
-    write(paper_sections_dir / "litreview.md", litreview)
-    write(paper_sections_dir / "methodology.md", methodology)
-    write(paper_sections_dir / "results.md", results)
-    write(paper_sections_dir / "conclusion.md", conclusion)
+    if write_debug_outputs:
+        paper_sections_dir = output_dir / "paper_sections"
+        write(paper_sections_dir / "intro.md", intro)
+        write(paper_sections_dir / "litreview.md", litreview)
+        write(paper_sections_dir / "methodology.md", methodology)
+        write(paper_sections_dir / "results.md", results)
+        write(paper_sections_dir / "conclusion.md", conclusion)
 
     # Step 3: Finalization
     print("[Paper Agent] Running finalization...")
@@ -331,7 +335,8 @@ def run_agent(args: argparse.Namespace) -> Path:
 
     draft = normalize_paper_draft(draft)
     write(output_dir / "final.md", draft)
-    write(output_dir / "best.md", draft)
+    if write_debug_outputs:
+        write(output_dir / "best.md", draft)
 
     return output_dir
 

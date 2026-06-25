@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +14,11 @@ class PipelineState:
         self.run_dir = Path(run_dir)
         self.state_path = self.run_dir / "run_state.json"
         self.stage_dir = self.run_dir / "stage_outputs"
+        self.internal_dir = self.run_dir / ".internal"
+        self.output_store_path = self.internal_dir / "stage_outputs.json"
         self.feedback_dir = self.run_dir / "feedback"
         self.state = self._load()
+        self.output_store = self._load_output_store()
 
     def _load(self) -> dict[str, Any]:
         if self.state_path.exists():
@@ -27,9 +31,18 @@ class PipelineState:
             "metadata": {},
         }
 
+    def _load_output_store(self) -> dict[str, Any]:
+        if self.output_store_path.exists():
+            return json.loads(self.output_store_path.read_text(encoding="utf-8"))
+        return {}
+
     def save(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+
+    def save_output_store(self) -> None:
+        self.output_store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.output_store_path.write_text(json.dumps(self.output_store, indent=2), encoding="utf-8")
 
     def set_metadata(self, key: str, value: Any) -> None:
         self.state.setdefault("metadata", {})[key] = value
@@ -38,26 +51,42 @@ class PipelineState:
     def get_metadata(self, key: str, default: Any = None) -> Any:
         return self.state.get("metadata", {}).get(key, default)
 
+    def write_stage_files_enabled(self) -> bool:
+        return os.getenv("WRITE_STAGE_OUTPUT_FILES", "").lower() == "true"
+
     def write_stage_output(self, stage: str, text: str, status: str = "generated") -> Path:
-        self.stage_dir.mkdir(parents=True, exist_ok=True)
         version = len(self.state.setdefault("versions", {}).setdefault(stage, [])) + 1
         versioned_path = self.stage_dir / f"{stage}_output_v{version:02d}.md"
         latest_path = self.stage_dir / f"{stage}_output.md"
 
         clean_text = text.rstrip() + "\n"
-        versioned_path.write_text(clean_text, encoding="utf-8")
-        latest_path.write_text(clean_text, encoding="utf-8")
+        self.output_store.setdefault(stage, []).append(
+            {
+                "version": version,
+                "text": clean_text,
+                "status": status,
+            }
+        )
+        self.save_output_store()
+
+        if self.write_stage_files_enabled():
+            self.stage_dir.mkdir(parents=True, exist_ok=True)
+            versioned_path.write_text(clean_text, encoding="utf-8")
+            latest_path.write_text(clean_text, encoding="utf-8")
+            active_ref = str(versioned_path)
+        else:
+            active_ref = f"internal://stage_outputs/{stage}/v{version:02d}"
 
         version_record = {
             "version": version,
-            "path": str(versioned_path),
+            "path": active_ref,
             "status": status,
         }
         self.state["versions"][stage].append(version_record)
-        self.state.setdefault("active_outputs", {})[stage] = str(versioned_path)
+        self.state.setdefault("active_outputs", {})[stage] = active_ref
         self.state.setdefault("stage_status", {})[stage] = status
         self.save()
-        return versioned_path
+        return versioned_path if self.write_stage_files_enabled() else Path(active_ref)
 
     def write_feedback(self, stage: str, feedback_text: str) -> Path:
         self.feedback_dir.mkdir(parents=True, exist_ok=True)
@@ -77,13 +106,20 @@ class PipelineState:
 
     def active_path(self, stage: str) -> Path | None:
         path = self.state.get("active_outputs", {}).get(stage)
+        if path and str(path).startswith("internal://"):
+            return None
         return Path(path) if path else None
 
     def read_active_output(self, stage: str) -> str:
+        ref = self.state.get("active_outputs", {}).get(stage)
+        if ref and str(ref).startswith("internal://"):
+            versions = self.output_store.get(stage, [])
+            return str(versions[-1].get("text", "")) if versions else ""
+
         path = self.active_path(stage)
-        if not path or not path.exists():
-            return ""
-        return path.read_text(encoding="utf-8")
+        if path and path.exists():
+            return path.read_text(encoding="utf-8")
+        return ""
 
     def approve_stage(self, stage: str) -> None:
         self.state.setdefault("stage_status", {})[stage] = "approved"

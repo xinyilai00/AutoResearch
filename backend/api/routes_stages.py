@@ -48,11 +48,12 @@ def read_output(path: Path) -> str:
 
 
 def response_for_path(stage: str, path: Path, state: PipelineState, status: str) -> dict:
+    output = read_output(path) if path.exists() else state.read_active_output(stage)
     return {
         "stage": stage,
         "status": status,
-        "output_path": str(path),
-        "output": read_output(path),
+        "output_path": str(path) if path.exists() else None,
+        "output": output,
         "state": state.state,
     }
 
@@ -156,13 +157,13 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
     paper_seed = request.paper
     args_list = [
         "--prompt", topic,
-        "--pi-output", str(state.active_path("pi") or ""),
-        "--part1-literature", str(state.active_path("literature") or ""),
-        "--research-questions", str(state.active_path("research_questions") or ""),
-        "--research-question", str(state.active_path("research_question") or ""),
-        "--deep-literature", str(state.active_path("deep_literature") or ""),
-        "--proposal", str(state.active_path("proposal") or ""),
-        "--experiment", str(state.active_path("experiment") or ""),
+        "--pi-output", state.read_active_output("pi"),
+        "--part1-literature", state.read_active_output("literature"),
+        "--research-questions", state.read_active_output("research_questions"),
+        "--research-question", state.read_active_output("research_question"),
+        "--deep-literature", state.read_active_output("deep_literature"),
+        "--proposal", state.read_active_output("proposal"),
+        "--experiment", state.read_active_output("experiment"),
         "--out", str(state.run_dir),
         "--iterations", "0",
         "--max-tokens", "14000",
