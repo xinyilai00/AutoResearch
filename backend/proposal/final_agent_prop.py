@@ -61,10 +61,34 @@ def normalize_spec(spec: dict) -> dict:
     for key, value in defaults.items():
         if key not in normalized or normalized[key] in ("", None):
             normalized[key] = value
+
+    runner_type = str(normalized.get("runner_type", "")).strip().lower()
+    if runner_type in {"standard", "default", "general", "generic", "safe", "basic"}:
+        normalized["runner_type"] = "universal_data_file"
+    elif runner_type:
+        normalized["runner_type"] = runner_type
+
+    task_type = str(normalized.get("task_type", "")).strip().lower()
+    if task_type not in {"classification", "regression", "auto", "inspect", "to_verify"}:
+        normalized["task_type"] = "auto"
+    elif task_type:
+        normalized["task_type"] = task_type
+
+    direction = str(normalized.get("threshold_direction", "")).strip().lower()
+    if direction in {"above", "higher", "greater", "greater_than", "at_least", ">=", ">"}:
+        normalized["threshold_direction"] = "greater_or_equal"
+    elif direction in {"below", "lower", "less", "less_than", "at_most", "<=", "<"}:
+        normalized["threshold_direction"] = "less_or_equal"
+
+    feature_columns = normalized.get("feature_columns")
     if not isinstance(normalized.get("dataset_urls"), list):
         normalized["dataset_urls"] = [str(normalized.get("dataset_urls"))]
-    if not isinstance(normalized.get("feature_columns"), list):
-        normalized["feature_columns"] = [str(normalized.get("feature_columns"))]
+    if not isinstance(feature_columns, list):
+        feature_columns = [str(feature_columns)]
+    normalized["feature_columns"] = [
+        "AUTO_NUMERIC" if str(column).strip().upper() in {"AUTO_DETECT", "AUTO", "AUTO_FEATURES"} else column
+        for column in feature_columns
+    ]
     return {key: normalized[key] for key in REQUIRED_SPEC_KEYS}
 
 
