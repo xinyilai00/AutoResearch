@@ -351,6 +351,8 @@ def github_api_json(url: str) -> dict:
 def search_github_repos(research_question: str, limit: int = 5) -> list[dict]:
     repos = []
     seen = set()
+    failure_count = 0
+    first_failure = ""
     for raw_query in search_queries(research_question):
         query = urllib.parse.quote(raw_query)
         url = f"https://api.github.com/search/repositories?q={query}&sort=stars&order=desc&per_page={limit}"
@@ -360,10 +362,12 @@ def search_github_repos(research_question: str, limit: int = 5) -> list[dict]:
             if exc.code in {403, 429}:
                 print(f"GitHub benchmark search hit rate limit at '{raw_query}'; stopping GitHub search for this run.")
                 break
-            print(f"GitHub benchmark search failed for '{raw_query}': {exc}")
+            failure_count += 1
+            first_failure = first_failure or str(exc)
             continue
         except Exception as exc:
-            print(f"GitHub benchmark search failed for '{raw_query}': {exc}")
+            failure_count += 1
+            first_failure = first_failure or str(exc)
             continue
         for item in payload.get("items", []):
             name = item.get("full_name", "")
@@ -383,6 +387,8 @@ def search_github_repos(research_question: str, limit: int = 5) -> list[dict]:
                     "search_query": raw_query,
                 }
             )
+    if failure_count and not repos:
+        print(f"GitHub benchmark search failed for {failure_count} queries. First error: {first_failure}")
     return sorted(repos, key=lambda repo: repo_score(repo, research_question), reverse=True)[: max(limit, 10)]
 
 
@@ -430,6 +436,8 @@ def huggingface_search_queries(research_question: str) -> list[str]:
 def search_huggingface_datasets(research_question: str, limit: int = 5) -> list[dict]:
     datasets = []
     seen = set()
+    failure_count = 0
+    first_failure = ""
     for raw_query in huggingface_search_queries(research_question):
         query = urllib.parse.quote(raw_query)
         url = f"https://huggingface.co/api/datasets?search={query}&limit={limit}"
@@ -438,7 +446,8 @@ def search_huggingface_datasets(research_question: str, limit: int = 5) -> list[
             with urllib.request.urlopen(request, timeout=45) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
-            print(f"Hugging Face dataset search failed for '{raw_query}': {exc}")
+            failure_count += 1
+            first_failure = first_failure or str(exc)
             continue
         for item in payload if isinstance(payload, list) else []:
             dataset_id = item.get("id") or item.get("name", "")
@@ -455,6 +464,8 @@ def search_huggingface_datasets(research_question: str, limit: int = 5) -> list[
                     "search_query": raw_query,
                 }
             )
+    if failure_count and not datasets:
+        print(f"Hugging Face dataset search failed for {failure_count} queries. First error: {first_failure}")
     return sorted(datasets, key=lambda item: (item.get("downloads", 0), item.get("likes", 0)), reverse=True)[:limit]
 
 
@@ -790,6 +801,53 @@ def display_repo_inspection(repo_inspection: dict) -> dict:
     }
 
 
+def compact_dataset_choice(dataset_choice: dict) -> dict:
+    source = dataset_choice.get("source")
+    if isinstance(source, list):
+        source_summary = {
+            "count": len(source),
+            "items": source[:5],
+        }
+    elif isinstance(source, dict):
+        source_summary = source
+    else:
+        source_summary = source
+    return {
+        "kind": dataset_choice.get("kind", "unknown"),
+        "confidence": dataset_choice.get("confidence", "low"),
+        "source": source_summary,
+    }
+
+
+def compact_repo_for_spec(repo: dict) -> dict:
+    if not repo:
+        return {}
+    return {
+        "name": repo.get("name", ""),
+        "url": repo.get("url", ""),
+        "clone_url": repo.get("clone_url", ""),
+        "description": short_description(repo.get("description", "")),
+        "stars": repo.get("stars", 0),
+        "language": repo.get("language", ""),
+        "search_query": repo.get("search_query", ""),
+    }
+
+
+def compact_repo_inspection_for_spec(repo_inspection: dict) -> dict:
+    if not repo_inspection.get("available"):
+        return repo_inspection
+    return {
+        "available": True,
+        "selection_confidence": repo_inspection.get("selection_confidence", "low"),
+        "file_count": repo_inspection.get("file_count", 0),
+        "benchmark_files": repo_inspection.get("benchmark_files", []),
+        "repo_data_files": repo_inspection.get("repo_data_files", []),
+        "dataset_urls": repo_inspection.get("dataset_urls", []),
+        "data_source_urls": repo_inspection.get("data_source_urls", []),
+        "metrics": repo_inspection.get("metrics", []),
+    }
+
+
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Finding benchmark repo and dataset...")
     deep_lit = compact_text(read_text_or_path(deep_literature_review), 1200)
@@ -810,15 +868,16 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
 
     hypothesis = make_hypothesis(research_question, repo, repo_inspection, dataset_choice)
     selection_confidence = "high" if dataset_choice.get("confidence") == "high" else repo_inspection.get("selection_confidence", "low")
+    compact_dataset = compact_dataset_choice(dataset_choice)
     spec = {
         "runner_type": "BENCHMARK_REPLICATION",
         "research_question": research_question,
-        "github_repo": repo,
-        "github_candidates": repos[:5],
+        "github_repo": compact_repo_for_spec(repo),
+        "github_candidates": [compact_repo_for_spec(item) for item in repos[:5]],
         "local_repo_path": str(repo_path) if repo_path else "TO_CLONE",
-        "repo_inspection": repo_inspection,
+        "repo_inspection": compact_repo_inspection_for_spec(repo_inspection),
         "huggingface_candidates": hf_datasets[:3],
-        "dataset_choice": dataset_choice,
+        "dataset_choice": compact_dataset,
         "local_dataset_paths": local_dataset_paths,
         "benchmark_entrypoints": repo_inspection.get("benchmark_files", []),
         "repo_data_files": repo_inspection.get("repo_data_files", []),
@@ -838,38 +897,45 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
     data_sources = {
         "github_repo": repo.get("url") if repo else "TO_FIND",
         "local_repo_path": str(repo_path) if repo_path else "TO_CLONE",
-        "dataset_choice": dataset_choice,
-        "local_dataset_paths": local_dataset_paths,
-        "repo_data_files": repo_inspection.get("repo_data_files", []),
+        "dataset_choice": compact_dataset,
+        "local_dataset_path_count": len(local_dataset_paths),
+        "local_dataset_paths": local_dataset_paths[:5],
+        "repo_data_file_count": len(repo_inspection.get("repo_data_files", [])),
+        "repo_data_files": repo_inspection.get("repo_data_files", [])[:5],
         "selection_confidence": selection_confidence,
     }
     selected_repo_display = display_repo(repo)
     candidate_display = display_repo_candidates(repos)
     inspection_display = display_repo_inspection(repo_inspection)
 
-    return f"""RESEARCH QUESTION:
+    return f"""PROPOSAL SUMMARY
+Research question: {research_question}
+Selected repo: {selected_repo_display.get("name", "NO_REPO_FOUND")} ({selected_repo_display.get("url", "TO_FIND")})
+Confidence: {selection_confidence}
+Dataset: {compact_dataset.get("kind")} ({compact_dataset.get("confidence")})
+Benchmark files: {len(entrypoints)}
+Data files: {len(repo_inspection.get("repo_data_files", []))}
+Metrics: {", ".join(metrics)}
+
+RESEARCH QUESTION:
 {research_question}
 
 HYPOTHESIS:
 {hypothesis}
 
 EXPERIMENT DESIGN:
-The proposal stage searched GitHub for an existing benchmark/experiment repository and searched Hugging Face for matching datasets. GitHub is preferred for runnable benchmark code; Hugging Face is preferred only when it clearly provides a stronger compatible dataset for the same benchmark topic.
-
-The experiment should first replicate the selected repository's existing benchmark, then run a modified comparison using the same dataset, variables, and metrics plus one transparent extra factor tied to the research question.
+Replicate the selected benchmark repo, then run a modified comparison using the same dataset, variables, and metrics plus one transparent factor tied to the research question.
 
 PUBLIC DATA SOURCES:
 {json.dumps(data_sources, indent=2)}
 
 DATA COLLECTION PLAN:
-Use the cloned GitHub repository as the primary source for benchmark code, dataset instructions, variables, splits, and metrics. Use repository-linked data files when available. Use a Hugging Face dataset only if it clearly matches the benchmark task and can be used without changing the benchmark's intended target.
+Use the cloned GitHub repository as the source for benchmark code and bundled or linked data.
 
 METHODOLOGY:
-1. Inspect README, dependency files, benchmark scripts, and dataset files/instructions.
-2. Reproduce the original benchmark in an isolated local branch of the cloned repository.
-3. Preserve the original dataset, variables/features, train/test split, and metrics.
-4. Add one new comparison factor or ablation related to the research question.
-5. Compare original benchmark output against the modified replication output using the same metrics.
+1. Reproduce the original benchmark in an isolated local branch.
+2. Preserve the original dataset, variables/features, split, and metrics.
+3. Compare the original benchmark against the modified replication.
 
 KEY VARIABLES:
 - Independent variables: repository-defined benchmark features plus one transparent added comparison factor.
@@ -879,38 +945,26 @@ KEY VARIABLES:
 SUCCESS CRITERIA:
 - The repository is cloned locally and benchmark-relevant scripts are identified.
 - The dataset source is local, repository-linked, or a compatible Hugging Face dataset.
-- The original benchmark can be inspected, and if execution is enabled, run on a separate local branch.
 - The modified hypothesis comparison reports the same metrics as the original benchmark.
 
 FEASIBILITY CHECK:
-Feasibility is strongest when the repository includes clear benchmark entrypoints, dependency files, and either bundled data files or direct dataset links. If these are missing, the experiment should stop with REPLICATION_NEEDS_REDESIGN rather than inventing variables or results.
+Feasible if the selected repository has benchmark scripts and usable data files or data links.
 
 LIMITATIONS AND RISKS:
 - GitHub repositories may have stale dependencies, missing data links, hardcoded paths, or GPU requirements.
 - Arbitrary repository code is unsafe, so execution is disabled unless ALLOW_BENCHMARK_CODE_EXECUTION=true.
-- Hugging Face datasets are useful only when they match the benchmark task; otherwise the repository's own dataset should be preferred.
-- If the repository lacks clear metrics or dataset documentation, the experiment may only produce a replication plan.
 
 SELECTED GITHUB REPOSITORY:
 {json.dumps(selected_repo_display, indent=2)}
-
-GITHUB CANDIDATES CONSIDERED:
-{json.dumps(candidate_display, indent=2)}
 
 REPOSITORY INSPECTION:
 {json.dumps(inspection_display, indent=2)}
 
 DATASET DECISION:
-{json.dumps(dataset_choice, indent=2)}
-
-BENCHMARK ENTRYPOINTS:
-{json.dumps(entrypoints, indent=2)}
+{json.dumps(compact_dataset, indent=2)}
 
 METRICS:
 {json.dumps(metrics, indent=2)}
-
-DEEP LITERATURE CONTEXT USED:
-{deep_lit}
 
 EXPERIMENT EXECUTION SPEC:
 {json.dumps(spec, indent=2)}
