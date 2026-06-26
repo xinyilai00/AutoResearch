@@ -228,6 +228,228 @@ if __name__ == "__main__":
     return script_path
 
 
+def generated_hypothesis_script(repo_path: Path, data_files: list[str], research_question: str) -> Path:
+    script_path = repo_path / "autoresearch_hypothesis_experiment.py"
+    script_path.write_text(
+        '''from __future__ import annotations
+
+import json
+import math
+import re
+from pathlib import Path
+
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.svm import SVC
+
+
+BAD_TARGET_MARKERS = ("id", "date", "time", "name", "url", "path", "source")
+TARGET_HINTS = ("target", "label", "class", "outcome", "result", "winner", "win", "home_win", "ftr", "purchased", "y")
+
+
+def read_table(path: Path) -> pd.DataFrame:
+    if path.suffix.lower() == ".tsv":
+        return pd.read_csv(path, sep="\\t")
+    return pd.read_csv(path)
+
+
+def choose_dataset() -> tuple[Path, pd.DataFrame]:
+    loaded = []
+    for item in DATA_FILES:
+        path = Path(item)
+        if not path.exists() or path.suffix.lower() not in {".csv", ".tsv"}:
+            continue
+        try:
+            data = read_table(path)
+        except Exception:
+            continue
+        if len(data) >= 20 and len(data.columns) >= 2:
+            loaded.append((path, data))
+    if not loaded:
+        raise SystemExit("No usable CSV/TSV dataset with at least 20 rows and 2 columns was found.")
+    return max(loaded, key=lambda item: (len(item[1]), len(item[1].columns)))
+
+
+def choose_target(data: pd.DataFrame) -> str:
+    scored = []
+    for column in data.columns:
+        name = str(column).lower()
+        values = data[column].dropna()
+        if values.empty:
+            continue
+        unique_count = values.astype(str).nunique()
+        score = 0
+        if any(hint == name or hint in name for hint in TARGET_HINTS):
+            score += 100
+        if 1 < unique_count <= max(50, int(len(data) * 0.2)):
+            score += 25
+        if column == data.columns[-1]:
+            score += 15
+        if any(marker in name for marker in BAD_TARGET_MARKERS):
+            score -= 80
+        scored.append((score, str(column)))
+    scored.sort(key=lambda item: (-item[0], list(map(str, data.columns)).index(item[1])))
+    if not scored or scored[0][0] <= 0:
+        raise SystemExit("No credible target column found.")
+    return scored[0][1]
+
+
+def infer_task(target_values: pd.Series) -> str:
+    values = target_values.dropna()
+    numeric_values = pd.to_numeric(values, errors="coerce")
+    numeric_ratio = numeric_values.notna().mean() if len(values) else 0
+    unique_count = values.astype(str).nunique()
+    return "regression" if numeric_ratio > 0.95 and unique_count > 20 else "classification"
+
+
+def one_hot_encoder():
+    try:
+        return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    except TypeError:
+        return OneHotEncoder(handle_unknown="ignore", sparse=False)
+
+
+def preprocessing(features: pd.DataFrame) -> ColumnTransformer:
+    numeric_columns = [column for column in features.columns if pd.api.types.is_numeric_dtype(features[column])]
+    categorical_columns = [column for column in features.columns if column not in numeric_columns]
+    transformers = []
+    if numeric_columns:
+        transformers.append(("numeric", Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]), numeric_columns))
+    if categorical_columns:
+        transformers.append(("categorical", Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", one_hot_encoder())]), categorical_columns))
+    return ColumnTransformer(transformers=transformers)
+
+
+def classifier_pair(question: str):
+    lowered = question.lower()
+    if "random forest" in lowered and "logistic" in lowered:
+        return (
+            "logistic_regression",
+            LogisticRegression(max_iter=1000, random_state=42),
+            "random_forest",
+            RandomForestClassifier(n_estimators=200, random_state=42),
+        )
+    if "svm" in lowered or "support vector" in lowered:
+        return (
+            "logistic_regression",
+            LogisticRegression(max_iter=1000, random_state=42),
+            "support_vector_machine",
+            SVC(kernel="rbf", random_state=42),
+        )
+    if "nearest" in lowered or "knn" in lowered:
+        return (
+            "logistic_regression",
+            LogisticRegression(max_iter=1000, random_state=42),
+            "knn",
+            KNeighborsClassifier(n_neighbors=5),
+        )
+    return (
+        "logistic_regression",
+        LogisticRegression(max_iter=1000, random_state=42),
+        "random_forest",
+        RandomForestClassifier(n_estimators=200, random_state=42),
+    )
+
+
+def regressor_pair(question: str):
+    return (
+        "linear_regression",
+        LinearRegression(),
+        "random_forest_regressor",
+        RandomForestRegressor(n_estimators=200, random_state=42),
+    )
+
+
+def run_model(name, model, preprocessor, train_x, test_x, train_y, test_y, task: str) -> dict:
+    pipeline = Pipeline([("preprocess", preprocessor), ("model", model)])
+    pipeline.fit(train_x, train_y)
+    predictions = pipeline.predict(test_x)
+    if task == "classification":
+        return {
+            "model": name,
+            "accuracy": float(accuracy_score(test_y, predictions)),
+            "f1_macro": float(f1_score(test_y, predictions, average="macro", zero_division=0)),
+        }
+    return {
+        "model": name,
+        "r2": float(r2_score(test_y, predictions)),
+        "mae": float(mean_absolute_error(test_y, predictions)),
+    }
+
+
+def main():
+    dataset_path, data = choose_dataset()
+    data = data.dropna(axis=1, how="all").dropna(axis=0, how="all")
+    target = choose_target(data)
+    task = infer_task(data[target])
+    features = data.drop(columns=[target])
+    labels = data[target]
+    if task == "regression":
+        labels = pd.to_numeric(labels, errors="coerce")
+        valid = labels.notna()
+        features = features.loc[valid]
+        labels = labels.loc[valid]
+    stratify = labels if task == "classification" and labels.nunique() > 1 and labels.value_counts().min() >= 2 else None
+    train_x, test_x, train_y, test_y = train_test_split(
+        features,
+        labels,
+        test_size=0.25,
+        random_state=42,
+        stratify=stratify,
+    )
+    preprocessor = preprocessing(features)
+    if task == "classification":
+        baseline_name, baseline_model, candidate_name, candidate_model = classifier_pair(RESEARCH_QUESTION)
+        primary_metric = "accuracy"
+        threshold = 0.0
+        direction = "greater"
+    else:
+        baseline_name, baseline_model, candidate_name, candidate_model = regressor_pair(RESEARCH_QUESTION)
+        primary_metric = "r2"
+        threshold = 0.0
+        direction = "greater"
+    baseline = run_model(baseline_name, baseline_model, preprocessor, train_x, test_x, train_y, test_y, task)
+    candidate = run_model(candidate_name, candidate_model, preprocessor, train_x, test_x, train_y, test_y, task)
+    improvement = candidate[primary_metric] - baseline[primary_metric]
+    supported = improvement > threshold if direction == "greater" else improvement < threshold
+    result = {
+        "hypothesis_supported": "SUPPORTED" if supported else "NOT_SUPPORTED",
+        "dataset": str(dataset_path),
+        "rows": int(len(data)),
+        "target": target,
+        "feature_count": int(len(features.columns)),
+        "task": task,
+        "primary_metric": primary_metric,
+        "baseline_result": baseline,
+        "candidate_result": candidate,
+        "improvement": float(improvement),
+        "decision_rule": f"candidate {primary_metric} must be greater than baseline {primary_metric}",
+        "research_question": RESEARCH_QUESTION,
+    }
+    Path("autoresearch_hypothesis_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(json.dumps(result, indent=2))
+
+
+DATA_FILES = __DATA_FILES__
+RESEARCH_QUESTION = __RESEARCH_QUESTION__
+
+
+if __name__ == "__main__":
+    main()
+'''.replace("__DATA_FILES__", repr(data_files)).replace("__RESEARCH_QUESTION__", repr(research_question)),
+        encoding="utf-8",
+    )
+    return script_path
+
+
 def prepare_replication_branch(repo_path: Path) -> dict:
     branch_name = os.getenv("BENCHMARK_REPLICATION_BRANCH", "autoresearch-replication")
     if not (repo_path / ".git").exists():
@@ -350,6 +572,68 @@ def patch_legacy_sklearn_imports(command: list[str], command_cwd: Path, stderr: 
     }
 
 
+def run_hypothesis_comparison(
+    repo_path: Path,
+    output_dir: Path,
+    data_files: list[str],
+    research_question: str,
+) -> dict | None:
+    if not data_files:
+        return None
+
+    script_path = generated_hypothesis_script(repo_path, data_files, research_question)
+    command = [sys.executable, script_path.name]
+    completed = subprocess.run(
+        command,
+        cwd=repo_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=600,
+    )
+    dependency_install = None
+    if completed.returncode != 0:
+        import_name = missing_import_name(completed.stderr)
+        if import_name:
+            dependency_install = install_missing_dependency(import_name)
+            if dependency_install.get("returncode") == 0:
+                completed = subprocess.run(
+                    command,
+                    cwd=repo_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=600,
+                )
+
+    stdout_path = output_dir / "hypothesis_stdout.txt"
+    stderr_path = output_dir / "hypothesis_stderr.txt"
+    stdout_path.write_text(completed.stdout, encoding="utf-8")
+    stderr_path.write_text(completed.stderr, encoding="utf-8")
+
+    result_path = repo_path / "autoresearch_hypothesis_result.json"
+    parsed_result = None
+    if result_path.exists():
+        try:
+            parsed_result = json.loads(result_path.read_text(encoding="utf-8"))
+            (output_dir / "hypothesis_result.json").write_text(json.dumps(parsed_result, indent=2), encoding="utf-8")
+        except json.JSONDecodeError:
+            parsed_result = None
+
+    return {
+        "executed": True,
+        "command": command,
+        "command_cwd": str(repo_path),
+        "returncode": completed.returncode,
+        "stdout_path": str(stdout_path),
+        "stderr_path": str(stderr_path),
+        "generated_script": str(script_path),
+        "dependency_install": dependency_install,
+        "result_path": str(output_dir / "hypothesis_result.json") if parsed_result else None,
+        "parsed_result": parsed_result,
+    }
+
+
 def safe_run_benchmark(
     repo_path: Path,
     entrypoints: list[str],
@@ -449,6 +733,9 @@ def safe_run_benchmark(
                 "generated_script": str(fallback_script),
                 "reason": "Original benchmark command failed, so Experiment ran a generated tabular fallback on repo data files.",
             }
+        hypothesis_result = None
+        if data_files and (completed.returncode == 0 or (fallback_result and fallback_result.get("returncode") == 0)):
+            hypothesis_result = run_hypothesis_comparison(repo_path, output_dir, data_files, research_question)
         return {
             "executed": True,
             "branch": branch_result,
@@ -461,6 +748,7 @@ def safe_run_benchmark(
             "compatibility_patch": compatibility_patch,
             "dependency_install": dependency_install,
             "fallback_result": fallback_result,
+            "hypothesis_result": hypothesis_result,
         }
     except Exception as exc:
         return {"executed": False, "branch": branch_result, "reason": str(exc), "command": command, "command_cwd": str(command_cwd)}
@@ -475,6 +763,43 @@ def build_replication_plan(spec: dict) -> list[str]:
         "Compare original benchmark metrics against the modified replication metrics.",
         "Report whether the new hypothesis is supported, unsupported, or undetermined.",
     ]
+
+
+def hypothesis_decision(run_result: dict) -> str:
+    hypothesis_result = run_result.get("hypothesis_result") if isinstance(run_result, dict) else None
+    if not isinstance(hypothesis_result, dict):
+        return "UNDETERMINED"
+    parsed_result = hypothesis_result.get("parsed_result")
+    if not isinstance(parsed_result, dict):
+        return "UNDETERMINED"
+    return str(parsed_result.get("hypothesis_supported", "UNDETERMINED"))
+
+
+def format_hypothesis_comparison(run_result: dict) -> str:
+    hypothesis_result = run_result.get("hypothesis_result") if isinstance(run_result, dict) else None
+    if not isinstance(hypothesis_result, dict):
+        return "- Not run."
+    parsed_result = hypothesis_result.get("parsed_result")
+    if not isinstance(parsed_result, dict):
+        reason = "comparison did not produce a parsed result"
+        if hypothesis_result.get("returncode") != 0:
+            reason = f"comparison command failed with return code {hypothesis_result.get('returncode')}"
+        return f"- {reason}."
+
+    baseline = parsed_result.get("baseline_result", {})
+    candidate = parsed_result.get("candidate_result", {})
+    metric = parsed_result.get("primary_metric", "primary_metric")
+    return "\n".join(
+        [
+            f"- Decision: {parsed_result.get('hypothesis_supported', 'UNDETERMINED')}",
+            f"- Dataset: {parsed_result.get('dataset', 'TO_VERIFY')}",
+            f"- Target: {parsed_result.get('target', 'TO_VERIFY')}",
+            f"- Task: {parsed_result.get('task', 'TO_VERIFY')}",
+            f"- Baseline: {baseline.get('model', 'baseline')} {metric}={baseline.get(metric, 'NA')}",
+            f"- Candidate: {candidate.get('model', 'candidate')} {metric}={candidate.get(metric, 'NA')}",
+            f"- Improvement: {parsed_result.get('improvement', 'NA')}",
+        ]
+    )
 
 
 def run_experiment_stage(
@@ -513,6 +838,7 @@ def run_experiment_stage(
         if repo_exists
         else {"executed": False, "reason": "Cloned repository path does not exist."}
     )
+    hypothesis_supported = hypothesis_decision(run_result)
 
     has_data = bool(datasets_found or repo_data_files)
     has_entrypoints = bool(entrypoints)
@@ -528,7 +854,7 @@ def run_experiment_stage(
         status = "REPLICATION_NEEDS_REDESIGN"
     result = {
         "status": status,
-        "hypothesis_supported": "UNDETERMINED",
+        "hypothesis_supported": hypothesis_supported,
         "redesign_needed": status != "REPLICATION_READY",
         "runner_type": spec.get("runner_type", "BENCHMARK_REPLICATION"),
         "repo_path": str(repo_path),
@@ -554,7 +880,7 @@ def run_experiment_stage(
 {status}
 
 ## Hypothesis Supported
-UNDETERMINED
+{hypothesis_supported}
 
 ## Summary
 Prepared a benchmark-replication experiment from the selected GitHub repository and dataset sources. The original benchmark should be replicated first, then compared against the new hypothesis while preserving the old dataset, variables, and metrics.
@@ -581,6 +907,9 @@ Prepared a benchmark-replication experiment from the selected GitHub repository 
 
 ## Execution
 {json.dumps(run_result, indent=2)}
+
+## Hypothesis Comparison
+{format_hypothesis_comparison(run_result)}
 
 ## Branch Safety
 If benchmark execution is enabled, the cloned repository is checked out to a local branch before running code. Default branch name: `autoresearch-replication`. Override with `BENCHMARK_REPLICATION_BRANCH`.
