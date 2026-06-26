@@ -8,6 +8,20 @@ import sys
 from pathlib import Path
 
 
+IMPORT_TO_PACKAGE = {
+    "cv2": "opencv-python",
+    "matplotlib": "matplotlib",
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "PIL": "Pillow",
+    "seaborn": "seaborn",
+    "sklearn": "scikit-learn",
+    "torch": "torch",
+    "tensorflow": "tensorflow",
+    "xgboost": "xgboost",
+}
+
+
 def read_text_or_path(value: str | Path) -> str:
     if isinstance(value, str) and len(value) > 500:
         return value
@@ -245,6 +259,65 @@ def prepare_replication_branch(repo_path: Path) -> dict:
         }
 
 
+def missing_import_name(stderr: str) -> str | None:
+    patterns = [
+        r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)['\"]",
+        r"ImportError:\s+No module named ['\"]([^'\"]+)['\"]",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, stderr)
+        if match:
+            return match.group(1).split(".", 1)[0]
+    return None
+
+
+def pip_package_for_import(import_name: str) -> str:
+    return IMPORT_TO_PACKAGE.get(import_name, import_name)
+
+
+def user_allows_dependency_install(import_name: str, package_name: str) -> bool:
+    setting = os.getenv("ALLOW_BENCHMARK_DEPENDENCY_INSTALL", "").lower()
+    if setting == "true":
+        return True
+    if setting == "false":
+        return False
+    if not sys.stdin.isatty():
+        return False
+
+    answer = input(
+        f"Benchmark repo is missing Python import '{import_name}'. "
+        f"Install pip package '{package_name}' and retry? [y/N]: "
+    ).strip().lower()
+    return answer in {"y", "yes"}
+
+
+def install_missing_dependency(import_name: str) -> dict:
+    package_name = pip_package_for_import(import_name)
+    if not user_allows_dependency_install(import_name, package_name):
+        return {
+            "attempted": False,
+            "import_name": import_name,
+            "package_name": package_name,
+            "reason": "User did not approve dependency installation or process is not interactive.",
+        }
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "pip", "install", package_name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=600,
+    )
+    return {
+        "attempted": True,
+        "import_name": import_name,
+        "package_name": package_name,
+        "returncode": completed.returncode,
+        "stdout": completed.stdout[-4000:],
+        "stderr": completed.stderr[-4000:],
+    }
+
+
 def safe_run_benchmark(
     repo_path: Path,
     entrypoints: list[str],
@@ -290,6 +363,22 @@ def safe_run_benchmark(
         )
         (output_dir / "benchmark_stdout.txt").write_text(completed.stdout, encoding="utf-8")
         (output_dir / "benchmark_stderr.txt").write_text(completed.stderr, encoding="utf-8")
+        dependency_install = None
+        if completed.returncode != 0 and generated_script is None:
+            import_name = missing_import_name(completed.stderr)
+            if import_name:
+                dependency_install = install_missing_dependency(import_name)
+                if dependency_install.get("returncode") == 0:
+                    completed = subprocess.run(
+                        command,
+                        cwd=command_cwd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=600,
+                    )
+                    (output_dir / "benchmark_stdout.txt").write_text(completed.stdout, encoding="utf-8")
+                    (output_dir / "benchmark_stderr.txt").write_text(completed.stderr, encoding="utf-8")
         fallback_result = None
         if completed.returncode != 0 and generated_script is None and data_files:
             fallback_script = generated_replication_script(repo_path, data_files)
@@ -323,6 +412,7 @@ def safe_run_benchmark(
             "stdout_path": str(output_dir / "benchmark_stdout.txt"),
             "stderr_path": str(output_dir / "benchmark_stderr.txt"),
             "generated_script": str(generated_script) if generated_script else None,
+            "dependency_install": dependency_install,
             "fallback_result": fallback_result,
         }
     except Exception as exc:
