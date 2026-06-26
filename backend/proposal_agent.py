@@ -848,6 +848,62 @@ def compact_repo_inspection_for_spec(repo_inspection: dict) -> dict:
     }
 
 
+def data_file_score(path: str, research_question: str) -> int:
+    lowered = path.lower()
+    keywords = research_keywords(research_question, 18)
+    score = sum(20 for keyword in keywords if keyword in lowered)
+    if lowered.endswith((".csv", ".tsv")):
+        score += 160
+    elif lowered.endswith((".jsonl", ".ndjson")):
+        score += 100
+    elif lowered.endswith(".json"):
+        score += 70
+    elif lowered.endswith(".parquet"):
+        score += 60
+    elif lowered.endswith(".zip"):
+        score -= 120
+    if "iris" in research_question.lower() and "iris" in lowered:
+        score += 250
+    if any(term in lowered for term in ("readme", "config", "settings")):
+        score -= 80
+    return score
+
+
+def select_data_files(paths: list[str], research_question: str, limit: int = 4) -> list[str]:
+    ranked = sorted(
+        list(dict.fromkeys(paths)),
+        key=lambda item: data_file_score(item, research_question),
+        reverse=True,
+    )
+    return ranked[:limit]
+
+
+def entrypoint_file_score(path: str, research_question: str) -> int:
+    lowered = path.lower().replace("_", " ").replace("-", " ")
+    keywords = research_keywords(research_question, 18)
+    score = sum(20 for keyword in keywords if keyword in lowered)
+    if "random forest" in research_question.lower() and "random" in lowered and "forest" in lowered:
+        score += 260
+    if "logistic regression" in research_question.lower() and "logistic" in lowered:
+        score += 220
+    if "iris" in research_question.lower() and "iris" in lowered:
+        score += 220
+    if "template" in lowered or "untitled" in lowered:
+        score -= 90
+    if "kernel svm" in lowered and "svm" not in research_question.lower():
+        score -= 40
+    return score
+
+
+def select_entrypoints(paths: list[str], research_question: str, limit: int = 6) -> list[str]:
+    ranked = sorted(
+        list(dict.fromkeys(paths)),
+        key=lambda item: entrypoint_file_score(item, research_question),
+        reverse=True,
+    )
+    return ranked[:limit]
+
+
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Finding benchmark repo and dataset...")
     deep_lit = compact_text(read_text_or_path(deep_literature_review), 1200)
@@ -868,21 +924,20 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
 
     hypothesis = make_hypothesis(research_question, repo, repo_inspection, dataset_choice)
     selection_confidence = "high" if dataset_choice.get("confidence") == "high" else repo_inspection.get("selection_confidence", "low")
+    selected_entrypoints = select_entrypoints(repo_inspection.get("benchmark_files", []), research_question)
+    selected_repo_data_files = select_data_files(repo_inspection.get("repo_data_files", []), research_question)
+    selected_local_dataset_paths = select_data_files(local_dataset_paths, research_question)
     compact_dataset = compact_dataset_choice(dataset_choice)
     spec = {
         "runner_type": "BENCHMARK_REPLICATION",
         "research_question": research_question,
         "github_repo": compact_repo_for_spec(repo),
-        "github_candidates": [compact_repo_for_spec(item) for item in repos[:5]],
         "local_repo_path": str(repo_path) if repo_path else "TO_CLONE",
-        "repo_inspection": compact_repo_inspection_for_spec(repo_inspection),
-        "huggingface_candidates": hf_datasets[:3],
         "dataset_choice": compact_dataset,
-        "local_dataset_paths": local_dataset_paths,
-        "benchmark_entrypoints": repo_inspection.get("benchmark_files", []),
-        "repo_data_files": repo_inspection.get("repo_data_files", []),
+        "local_dataset_paths": selected_local_dataset_paths,
+        "benchmark_entrypoints": selected_entrypoints,
+        "repo_data_files": selected_repo_data_files,
         "selection_confidence": selection_confidence,
-        "variables": "Use variables/features defined by the cloned benchmark repository and its dataset schema.",
         "metrics": repo_inspection.get("metrics", []) or ["TO_IDENTIFY_FROM_REPO"],
         "new_hypothesis": hypothesis,
         "execution_policy": "SAFE_INSPECT_ONLY_BY_DEFAULT",
@@ -892,16 +947,16 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
             "If Hugging Face has a clearly stronger matching dataset, use it only when compatible with the repo task."
         ),
     }
-    entrypoints = repo_inspection.get("benchmark_files", [])
+    entrypoints = selected_entrypoints
     metrics = repo_inspection.get("metrics", []) or ["TO_IDENTIFY_FROM_REPO"]
     data_sources = {
         "github_repo": repo.get("url") if repo else "TO_FIND",
         "local_repo_path": str(repo_path) if repo_path else "TO_CLONE",
         "dataset_choice": compact_dataset,
-        "local_dataset_path_count": len(local_dataset_paths),
-        "local_dataset_paths": local_dataset_paths[:5],
+        "local_dataset_path_count": len(selected_local_dataset_paths),
+        "local_dataset_paths": selected_local_dataset_paths,
         "repo_data_file_count": len(repo_inspection.get("repo_data_files", [])),
-        "repo_data_files": repo_inspection.get("repo_data_files", [])[:5],
+        "repo_data_files": selected_repo_data_files,
         "selection_confidence": selection_confidence,
     }
     selected_repo_display = display_repo(repo)
