@@ -318,6 +318,38 @@ def install_missing_dependency(import_name: str) -> dict:
     }
 
 
+def patch_legacy_sklearn_imports(command: list[str], command_cwd: Path, stderr: str) -> dict | None:
+    if "sklearn.cross_validation" not in stderr:
+        return None
+    if len(command) < 2:
+        return {
+            "patched": False,
+            "reason": "Could not identify benchmark script path.",
+        }
+
+    script_path = command_cwd / command[1]
+    if not script_path.exists() or script_path.suffix != ".py":
+        return {
+            "patched": False,
+            "reason": f"Benchmark script is not a patchable Python file: {script_path}",
+        }
+
+    source = script_path.read_text(encoding="utf-8", errors="ignore")
+    patched = source.replace("sklearn.cross_validation", "sklearn.model_selection")
+    if patched == source:
+        return {
+            "patched": False,
+            "reason": "Legacy sklearn import was detected in stderr but not found in the script.",
+        }
+
+    script_path.write_text(patched, encoding="utf-8")
+    return {
+        "patched": True,
+        "file": str(script_path),
+        "change": "Replaced sklearn.cross_validation with sklearn.model_selection.",
+    }
+
+
 def safe_run_benchmark(
     repo_path: Path,
     entrypoints: list[str],
@@ -364,6 +396,20 @@ def safe_run_benchmark(
         (output_dir / "benchmark_stdout.txt").write_text(completed.stdout, encoding="utf-8")
         (output_dir / "benchmark_stderr.txt").write_text(completed.stderr, encoding="utf-8")
         dependency_install = None
+        compatibility_patch = None
+        if completed.returncode != 0 and generated_script is None:
+            compatibility_patch = patch_legacy_sklearn_imports(command, command_cwd, completed.stderr)
+            if compatibility_patch and compatibility_patch.get("patched"):
+                completed = subprocess.run(
+                    command,
+                    cwd=command_cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=600,
+                )
+                (output_dir / "benchmark_stdout.txt").write_text(completed.stdout, encoding="utf-8")
+                (output_dir / "benchmark_stderr.txt").write_text(completed.stderr, encoding="utf-8")
         if completed.returncode != 0 and generated_script is None:
             import_name = missing_import_name(completed.stderr)
             if import_name:
@@ -412,6 +458,7 @@ def safe_run_benchmark(
             "stdout_path": str(output_dir / "benchmark_stdout.txt"),
             "stderr_path": str(output_dir / "benchmark_stderr.txt"),
             "generated_script": str(generated_script) if generated_script else None,
+            "compatibility_patch": compatibility_patch,
             "dependency_install": dependency_install,
             "fallback_result": fallback_result,
         }
