@@ -86,10 +86,9 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
           <div className="input-row">
             <button
               className="run-button"
-              onClick={() => handleRun()}
-              disabled={running}
+              onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
             >
-              {running ? "Running..." : done ? "Rerun" : "Run Literature Review"}
+              {running ? "Stop" : done ? "Rerun" : "Run Literature Review"}
             </button>
           </div>
         </>

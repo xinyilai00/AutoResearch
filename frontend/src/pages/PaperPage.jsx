@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import FeedbackBar from "../components/FeedbackBar.jsx";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 
 const PHASE_LABELS = ["Drafting paper...", "Polishing paper..."];
 const PHASE_DURATION_MS = 300000;
@@ -11,6 +15,8 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
   const [error, setError] = useState("");
   const [phaseIndex, setPhaseIndex] = useState(0);
   const phaseTimerRef = useRef(null);
+  const [status, setStatus] = useState("");
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     setOutput(paperOutput || "");
@@ -24,19 +30,27 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
   }, []);
 
   async function handleRun(feedback = null) {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+
     setOutput("");
     setDone(false);
     setRunning(true);
     setError("");
     setPhaseIndex(0);
+    setStatus("Drafting paper...");
 
-    phaseTimerRef.current = setTimeout(() => setPhaseIndex(1), PHASE_DURATION_MS);
+    phaseTimerRef.current = setTimeout(() => {
+      setPhaseIndex(1);
+      setStatus("Polishing paper...");
+    }, PHASE_DURATION_MS);
 
     try {
       const res = await fetch("http://localhost:8000/api/stages/paper/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ feedback: feedback || undefined }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!res.ok) {
@@ -49,8 +63,14 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
       setOutput(text);
       onComplete(text);
       setDone(true);
+      setStatus("");
     } catch (e) {
+      if (e.name === "AbortError") {
+        setStatus("");
+        return;
+      }
       setError(e.message);
+      setStatus("");
     } finally {
       clearTimeout(phaseTimerRef.current);
       setRunning(false);
@@ -73,19 +93,27 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
         <div className="input-row">
           <button
             className="run-button"
-            onClick={() => handleRun()}
-            disabled={running}
+            onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
           >
-            {running ? PHASE_LABELS[phaseIndex] : done ? "Rerun" : "Run Paper Agent"}
+            {running ? "Stop" : done ? "Rerun" : "Run Paper Agent"}
           </button>
         </div>
+
+        {status && (
+          <div className="status-indicator">
+            <div className="spinner"></div>
+            <p>{status}</p>
+          </div>
+        )}
       {/* ) */}
 
       {error && <div className="error-box">{error}</div>}
 
       {output && (
         <div className="output-box">
-          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{output}</div>
+          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+            {output}
+          </ReactMarkdown>
         </div>
       )}
 

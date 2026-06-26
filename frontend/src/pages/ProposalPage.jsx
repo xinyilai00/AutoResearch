@@ -85,10 +85,9 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
         <div className="input-row">
           <button
             className="run-button"
-            onClick={() => handleRun()}
-            disabled={running}
+            onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
           >
-            {running ? "Running..." : done ? "Rerun" : "Run Proposal Agent"}
+            {running ? "Stop" : done ? "Rerun" : "Run Proposal Agent"}
           </button>
         </div>
       )}
