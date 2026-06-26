@@ -74,8 +74,11 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
 
       {proposalOutput && (
         <div className="input-row">
-          <button className="run-button" onClick={() => handleRun()} disabled={running}>
-            {running ? "Running experiment..." : done ? "Rerun" : "Run Experiment Agent"}
+          <button
+            className="run-button"
+            onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
+          >
+            {running ? "Stop" : done ? "Rerun" : "Run Experiment Agent"}
           </button>
         </div>
       )}

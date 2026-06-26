@@ -24,13 +24,14 @@ Job:
 Generate 5-10 candidate research questions that fill gaps identified in the literature.
 
 Rules:
-- Each question must be grounded in the provided literature gaps.
-- Each question must be specific, testable, and empirically answerable.
+- Each question must be one clear, concise sentence.
+- Each question must be understandable to an intelligent non-expert — no jargon, no sub-clauses, no embedded methodology.
+- Each question must be specific and empirically answerable.
 - Each question must be feasible for an AI research pipeline to investigate autonomously using computational methods, public datasets, public repositories, database records, simulations, or synthetically generated data.
 - Do NOT propose questions requiring physical experiments, lab equipment, human subjects, private/proprietary data, or impossible data collection.
 - Do NOT fabricate citations, datasets, or prior findings.
-- If you mention citations, use author-year format only, such as (Smith, 2023).
-- Do NOT use or preserve numeric citation markers such as [1], [22], [2,5], or [3-6].
+- Do NOT use numeric citation markers such as [1], [22], [2,5], or [3-6].
+- Do NOT include gap analysis, feasibility notes, or any metadata alongside the question — just the question itself.
 - Rank questions from most to least promising.
 - Return plain text only.
 - Do not add text before CANDIDATE RESEARCH QUESTIONS or after the final question.
@@ -38,8 +39,8 @@ Rules:
 Output in this exact format:
 
 CANDIDATE RESEARCH QUESTIONS:
-1. [question] | Gap addressed: [specific gap] | Feasibility: [why public/computational data can answer it]
-2. [question] | Gap addressed: [specific gap] | Feasibility: [why public/computational data can answer it]
+1. [question]
+2. [question]
 ...
 """
 

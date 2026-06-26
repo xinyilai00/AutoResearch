@@ -108,10 +108,10 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
         />
         <button
           className="run-button"
-          onClick={() => handleRun()}
-          disabled={running || !localTopic.trim()}
+          onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
+          disabled={!localTopic.trim()}
         >
-          {running ? "Running..." : done ? "Rerun" : "Run"}
+          {running ? "Stop" : done ? "Rerun" : "Run"}
         </button>
       </div>
 
