@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, litOutput, onComplete }) {
-  const navigate = useNavigate();
+export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, litOutput, onComplete, repoUrl, hypothesis }) 
+{  const navigate = useNavigate();
   const [localTopic, setLocalTopic] = useState(topic || "");
   const [output, setOutput] = useState(litOutput || "");
   const [running, setRunning] = useState(false);
@@ -46,8 +46,7 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
       const piResponse = await fetch("http://localhost:8000/api/stages/pi/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: localTopic, feedback: feedback }),
-        signal: signal
+        body: JSON.stringify({ topic: localTopic, feedback: feedback, repo_url: repoUrl, hypothesis: hypothesis }),        signal: signal
       });
 
       if (!piResponse.ok) throw new Error(`PI agent error: ${piResponse.status}`);
@@ -58,8 +57,7 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
       const litResponse = await fetch("http://localhost:8000/api/stages/literature/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: localTopic, pi_output: piOutput, feedback: feedback }),
-        signal: signal
+        body: JSON.stringify({ topic: localTopic, pi_output: piOutput, feedback: feedback, repo_url: repoUrl, hypothesis: hypothesis }),        signal: signal
       });
 
       if (!litResponse.ok) throw new Error(`Literature agent error: ${litResponse.status}`);

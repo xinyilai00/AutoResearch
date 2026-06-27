@@ -12,36 +12,34 @@ try:
 except ImportError:
     from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
+try:
+    from backend.pipeline_state import get_experiment_anchor
+except ImportError:
+    from pipeline_state import get_experiment_anchor
+
 
 RESEARCH_QUESTION_SYSTEM_PROMPT = """
-You are the Research Question Agent in an autonomous research pipeline.
+You are the Research Question Agent in an autonomous research pipeline focused on replicating a specific ML experiment.
 
-Input:
-- Raw research topic
-- Part 1 literature review containing existing work and gaps
+You will be given:
+- The experiment context (repo being replicated and hypothesis)
+- The literature review and gaps
 
-Job:
-Generate 5-10 candidate research questions that fill gaps identified in the literature.
+Your job is to output EXACTLY ONE research question that directly frames the replication study.
 
 Rules:
-- Each question must be one clear, concise sentence.
-- Each question must be understandable to an intelligent non-expert — no jargon, no sub-clauses, no embedded methodology.
-- Each question must be specific and empirically answerable.
-- Each question must be feasible for an AI research pipeline to investigate autonomously using computational methods, public datasets, public repositories, database records, simulations, or synthetically generated data.
-- Do NOT propose questions requiring physical experiments, lab equipment, human subjects, private/proprietary data, or impossible data collection.
-- Do NOT fabricate citations, datasets, or prior findings.
-- Do NOT use numeric citation markers such as [1], [22], [2,5], or [3-6].
-- Do NOT include gap analysis, feasibility notes, or any metadata alongside the question — just the question itself.
-- Rank questions from most to least promising.
-- Return plain text only.
-- Do not add text before CANDIDATE RESEARCH QUESTIONS or after the final question.
+- Output exactly one question — no more, no less
+- The question must be one clear, concise sentence
+- The question must be directly tied to the experiment being replicated
+- The question must be empirically answerable by running the experiment
+- No jargon, no sub-clauses, no methodology embedded in the question
+- Return plain text only
+- Do not add any text before RESEARCH QUESTION or after the question itself
 
 Output in this exact format:
 
-CANDIDATE RESEARCH QUESTIONS:
-1. [question]
-2. [question]
-...
+RESEARCH QUESTION:
+[question]
 """
 
 
@@ -97,7 +95,26 @@ def get_response(request_id: str) -> str:
     return full_response.strip()
 
 
+def parse_research_question(output: str) -> str:
+    for line in output.splitlines():
+        line = line.strip()
+        if "RESEARCH QUESTION:" in line.upper():
+            continue
+        if line and not line.upper().startswith("RESEARCH QUESTION"):
+            return line
+    return output.strip()
+
+
 def run_research_question_agent(topic: str, literature_output: str) -> str:
+    anchor = get_experiment_anchor()
+    anchor_context = f"""
+EXPERIMENT CONTEXT:
+- GitHub Repo being replicated: {anchor['repo_url']}
+- Hypothesis: {anchor['hypothesis']}
+
+Generate a research question that directly frames the replication of this specific experiment.
+"""
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {API_KEY}",
@@ -106,9 +123,10 @@ def run_research_question_agent(topic: str, literature_output: str) -> str:
     body = {
         "agentId": AGENT_ID,
         "userInput": (
-            RESEARCH_QUESTION_SYSTEM_PROMPT
+            anchor_context
+            + RESEARCH_QUESTION_SYSTEM_PROMPT
             + f"\n\nRaw research topic:\n{topic}"
-            + f"\n\nPart 1 literature review and gaps:\n{literature_output}"
+            + f"\n\nLiterature review and gaps:\n{literature_output}"
         ),
     }
     if SEND_MODEL_TO_AGENT_API and MODEL:
@@ -126,7 +144,8 @@ def run_research_question_agent(topic: str, literature_output: str) -> str:
             response.raise_for_status()
             request_id = response.json()["data"]["requestId"]
             print("Got requestId:", request_id)
-            return get_response(request_id)
+            raw = get_response(request_id)
+            return parse_research_question(raw)
         except requests.exceptions.RequestException as exc:
             last_error = exc
             print(f"Research Question API request failed on attempt {attempt}/3: {exc}")
@@ -141,46 +160,14 @@ def run_research_question_agent(topic: str, literature_output: str) -> str:
     raise RuntimeError(f"Research Question API unavailable: {last_error}")
 
 
-def parse_candidate_research_questions(question_output: str) -> list[str]:
-    questions = []
-    in_questions_section = False
-
-    for line in question_output.splitlines():
-        line = line.strip()
-
-        if "CANDIDATE RESEARCH QUESTIONS" in line.upper():
-            in_questions_section = True
-            continue
-
-        if in_questions_section and line and line[0].isdigit() and (". " in line or ") " in line):
-            if ". " in line:
-                question = line.split(". ", 1)[1].strip()
-            else:
-                question = line.split(") ", 1)[1].strip()
-            if "| Gap addressed:" in question:
-                question = question.split("| Gap addressed:", 1)[0].strip()
-            if "| Feasibility:" in question:
-                question = question.split("| Feasibility:", 1)[0].strip()
-            if len(question) > 30:
-                questions.append(question)
-
-    return questions
-
-
-def fallback_research_questions(topic: str, reason: str) -> str:
-    return f"""CANDIDATE RESEARCH QUESTIONS:
-1. What computationally testable research question can be derived from the topic "{topic}" once literature gaps are verified? | Gap addressed: TO_VERIFY | Feasibility: Pending because the Research Question Agent failed: {reason}
-"""
-
-
 def run_research_question_stage(topic: str, literature_output: str | Path) -> str:
-    print("\n[Research Question Agent] Generating candidate questions...")
+    print("\n[Research Question Agent] Generating research question...")
     literature_text = read_text_or_path(literature_output)
     try:
         return run_research_question_agent(topic, literature_text)
     except Exception as exc:
-        print(f"Research Question failed; using placeholder. Reason: {exc}")
-        return fallback_research_questions(topic, str(exc))
+        print(f"Research Question failed. Reason: {exc}")
+        raise
 
 
 if __name__ == "__main__":

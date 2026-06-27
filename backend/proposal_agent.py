@@ -180,53 +180,7 @@ def important_terms(research_question: str) -> list[str]:
         ):
             acronyms.extend(normalized_parts)
     keywords = research_keywords(research_question, 24)
-    lowered_question = research_question.lower()
-    phrase_terms = []
-    if "genome-wide association" in lowered_question or "genome wide association" in lowered_question:
-        phrase_terms.append("gwas")
-    if "single nucleotide polymorphism" in lowered_question or "single nucleotide polymorphisms" in lowered_question:
-        phrase_terms.append("snp")
-    priority_words = {
-        "attention",
-        "attribution",
-        "biologically",
-        "classifier",
-        "classifiers",
-        "deep",
-        "effect",
-        "feature",
-        "importance",
-        "interpretability",
-        "missense",
-        "pathogenicity",
-        "protein",
-        "shap",
-        "stability",
-        "variant",
-        "variants",
-        "alphafold",
-        "breed",
-        "cat",
-        "cats",
-        "diabetes",
-        "feline",
-        "folding",
-        "genome",
-        "genomic",
-        "gwas",
-        "binding",
-        "conformational",
-        "polymorphisms",
-        "sequence",
-        "single",
-        "snp",
-        "structure",
-        "structural",
-        "susceptibility",
-    }
-    prioritized = [word for word in keywords if word in priority_words]
-    remaining = [word for word in keywords if word not in prioritized]
-    return list(dict.fromkeys([*phrase_terms, *acronyms, *prioritized, *remaining]))
+    return list(dict.fromkeys([*acronyms, *keywords]))
 
 
 def keyword_bundles(keywords: list[str], size: int = 3, limit: int = 8) -> list[str]:
@@ -250,86 +204,45 @@ def search_query(research_question: str) -> str:
 
 
 def search_queries(research_question: str) -> list[str]:
-    keywords = important_terms(research_question)[:18]
-    bundles = keyword_bundles(keywords, size=3, limit=5)
-    if not bundles:
-        bundles = ["machine learning benchmark"]
+    keywords = important_terms(research_question)[:12]
+    if not keywords:
+        return ["machine learning benchmark"]
 
     queries = []
-    term_set = set(keywords)
-    method_terms = [term for term in ("shap", "attention", "attribution", "interpretability") if term in term_set]
-    domain_terms = [
-        term for term in ("cadd", "protein", "variant", "effect", "stability", "pathogenicity")
-        if term in term_set
-    ]
-    for domain in domain_terms[:3]:
-        for method in method_terms[:1]:
-            queries.extend(
-                [
-                    f"{domain} {method} github",
-                    f"{domain} {method} benchmark",
-                ]
-            )
-    if "protein" in term_set and "language" in term_set:
-        queries.extend(
-            [
-                "protein language model variant effect",
-                "protein language model pathogenicity benchmark",
-            ]
-        )
-    if "cadd" in term_set:
-        queries.extend(
-            [
-                "cadd variant effect prediction",
-                "cadd pathogenicity github",
-            ]
-        )
-    if "feline" in term_set or "cat" in term_set or "cats" in term_set:
-        queries.extend(
-            [
-                "feline gwas benchmark",
-                "cat diabetes snp",
-                "feline genomic dataset",
-                "cat genome association",
-            ]
-        )
-    if "gwas" in term_set or "snp" in term_set:
-        queries.extend(
-            [
-                "gwas snp association code",
-                "genome wide association snp dataset",
-            ]
-        )
-    if len(keywords) >= 2:
-        queries.extend(
-            [
-                f"{keywords[0]} {keywords[1]} benchmark",
-                f"{keywords[0]} {keywords[1]} github",
-            ]
-        )
+
+    # Core topic queries
+    core = " ".join(keywords[:3])
+    queries.extend([
+        f"{core} benchmark",
+        f"{core} experiment",
+        f"{core} dataset",
+        f"{core} github",
+    ])
+
+    # Two-keyword combos
+    for i in range(min(4, len(keywords) - 1)):
+        pair = f"{keywords[i]} {keywords[i + 1]}"
+        queries.extend([
+            f"{pair} benchmark",
+            f"{pair} experiment code",
+        ])
+
+    # Single most important keyword + benchmark terms
+    queries.extend([
+        f"{keywords[0]} benchmark dataset",
+        f"{keywords[0]} replication code",
+        f"{keywords[0]} experiment github",
+    ])
+
+    # Three-keyword combos for variety
     if len(keywords) >= 3:
-        queries.extend(
-            [
-                f"{keywords[0]} {keywords[1]} {keywords[2]}",
-                f"{keywords[0]} {keywords[2]} dataset",
-            ]
-        )
-    for bundle in bundles:
-        queries.extend(
-            [
-                f"{bundle} benchmark dataset",
-                f"{bundle} reproducibility code",
-                f"{bundle} github",
-            ]
-        )
-    if len(keywords) >= 2:
-        queries.extend(
-            [
-                f"{keywords[0]} {keywords[1]} benchmark dataset",
-                f"{keywords[0]} {keywords[-1]} experiment code",
-            ]
-        )
-    return list(dict.fromkeys(query for query in queries if query.strip()))[:12]
+        queries.extend([
+            f"{keywords[0]} {keywords[1]} {keywords[2]}",
+            f"{keywords[0]} {keywords[2]} benchmark",
+        ])
+
+    print(f"[Proposal Agent] Generated queries: {list(dict.fromkeys(q for q in queries if q.strip()))[:12]}")
+    return list(dict.fromkeys(q for q in queries if q.strip()))[:12]
 
 
 def github_api_json(url: str) -> dict:
@@ -348,12 +261,49 @@ def github_api_json(url: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def generate_search_queries_via_ai(research_question: str) -> list[str]:
+    prompt = f"""You are helping find relevant GitHub repositories for a research paper.
+
+Research question: {research_question}
+
+Generate exactly 8 specific GitHub search queries to find self-contained benchmark repositories relevant to this research question.
+
+Rules:
+- Each query must be 2-3 words maximum — shorter is better for GitHub search
+- Focus on the core technical method or task names only
+- Target repos with bundled datasets, no external API keys required
+- Queries should be diverse
+- Output ONLY the queries, one per line, no numbering, no explanation
+
+Example format:
+bert distillation benchmark
+transformer pruning pytorch
+nlp compression glue
+attention efficiency dataset"""
+
+    try:
+        from .agent_api import call_agent_api
+        from .config import PRINCIPAL_ID
+    except ImportError:
+        from agent_api import call_agent_api
+        from config import PRINCIPAL_ID
+
+    try:
+        result = call_agent_api(prompt, "Query Generator", PRINCIPAL_ID)
+        queries = [line.strip() for line in result.strip().splitlines() if line.strip()]
+        queries = [q for q in queries if 2 <= len(q.split()) <= 6]
+        print(f"[Proposal Agent] AI-generated queries: {queries}")
+        return queries[:8] if queries else search_queries(research_question)
+    except Exception as exc:
+        print(f"[Proposal Agent] AI query generation failed, falling back to keyword queries. Reason: {exc}")
+        return search_queries(research_question)
+
 def search_github_repos(research_question: str, limit: int = 5) -> list[dict]:
     repos = []
     seen = set()
     failure_count = 0
     first_failure = ""
-    for raw_query in search_queries(research_question):
+    for raw_query in generate_search_queries_via_ai(research_question):        
         query = urllib.parse.quote(raw_query)
         url = f"https://api.github.com/search/repositories?q={query}&sort=stars&order=desc&per_page={limit}"
         try:
@@ -389,6 +339,10 @@ def search_github_repos(research_question: str, limit: int = 5) -> list[dict]:
             )
     if failure_count and not repos:
         print(f"GitHub benchmark search failed for {failure_count} queries. First error: {first_failure}")
+    print(f"[Proposal Agent] Total repos found before scoring: {len(repos)}")
+    for r in repos[:5]:
+        print(f"  - {r['name']} (stars: {r['stars']}, score: {repo_score(r, research_question)})")
+    
     return sorted(repos, key=lambda repo: repo_score(repo, research_question), reverse=True)[: max(limit, 10)]
 
 
@@ -752,6 +706,7 @@ def select_and_clone_repo(repos: list[dict], research_question: str) -> tuple[di
         return {}, None, {"available": False, "reason": "No repository candidates were found."}
 
     repo = repos[0]
+    print(f"[Proposal Agent] Attempting to clone: {repo.get('name')} | clone_url: {repo.get('clone_url')}")
     repo_path = clone_repo(repo)
     repo_inspection = inspect_repo(repo_path)
     if repo_is_useful(repo_inspection) and inspected_repo_score(repo, repo_inspection, research_question) >= 0:
@@ -906,9 +861,14 @@ def select_entrypoints(paths: list[str], research_question: str, limit: int = 6)
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Finding benchmark repo and dataset...")
+    import shutil
+    repos_dir = BENCHMARK_DIR / "repos"
+    if repos_dir.exists():
+        shutil.rmtree(repos_dir)
+        print("[Proposal Agent] Cleared stale repo cache.")
     deep_lit = compact_text(read_text_or_path(deep_literature_review), 1200)
     repos = search_github_repos(research_question)
-    hf_datasets = search_huggingface_datasets(research_question)
+    hf_datasets = []
     repo, repo_path, repo_inspection = select_and_clone_repo(repos, research_question)
     dataset_choice = choose_dataset_source(repo_inspection, hf_datasets)
 

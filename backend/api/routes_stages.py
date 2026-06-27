@@ -13,7 +13,7 @@ from backend.lit_agent_p2 import run_deep_literature_stage
 from backend.paper_agent import parse_args as parse_paper_args
 from backend.paper_agent import run_agent as run_paper_agent
 from backend.pi_agent import run_pi_agent
-from backend.pipeline_state import PipelineState
+from backend.pipeline_state import PipelineState, set_experiment_anchor
 from backend.proposal_agent import run_proposal_stage
 from backend.research_question_agent import run_research_question_stage
 from backend.review_agent import run_review_from_file
@@ -34,6 +34,8 @@ class StageRunRequest(BaseModel):
     experiment: Optional[str] = None
     paper: Optional[str] = None
     run_dir: str = "paper_runs/latest"
+    repo_url: Optional[str] = None        # NEW
+    hypothesis: Optional[str] = None      # NEW
 
 
 class StageFeedbackRequest(BaseModel):
@@ -48,12 +50,11 @@ def read_output(path: Path) -> str:
 
 
 def response_for_path(stage: str, path: Path, state: PipelineState, status: str) -> dict:
-    output = read_output(path) if path.exists() else state.read_active_output(stage)
     return {
         "stage": stage,
         "status": status,
-        "output_path": str(path) if path.exists() else None,
-        "output": output,
+        "output_path": str(path),
+        "output": state.read_active_output(stage),
         "state": state.state,
     }
 
@@ -66,6 +67,9 @@ def run_stage(stage: str, request: StageRunRequest) -> dict:
     state = PipelineState(request.run_dir)
     if request.topic:
         state.set_metadata("topic", request.topic)
+
+    if request.repo_url and request.hypothesis:
+        set_experiment_anchor(request.repo_url, request.hypothesis)
 
     try:
         if request.feedback:
@@ -103,7 +107,11 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         pi_output = request.pi_output or state.read_active_output("pi")
         if not topic or not pi_output:
             raise ValueError("Literature stage requires topic and PI output.")
-        output = run_literature_stage(pi_output, topic)
+        try:
+            output = run_literature_stage(pi_output, topic)
+        except Exception as e:
+            print(f"DEBUG LITERATURE ERROR: {e}")
+            raise
         return state.write_stage_output("literature", output)
 
     if stage == "research_questions":
@@ -111,7 +119,11 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         literature = request.literature or state.read_active_output("literature")
         if not topic or not literature:
             raise ValueError("Research Questions stage requires topic and literature output.")
-        output = run_research_question_stage(topic, literature)
+        try:
+            output = run_research_question_stage(topic, literature)
+        except Exception as e:
+            print(f"DEBUG RESEARCH QUESTIONS ERROR: {e}")
+            raise
         return state.write_stage_output("research_questions", output)
 
     if stage == "research_question":
@@ -124,7 +136,11 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         question = request.research_question or state.read_active_output("research_question")
         if not question:
             raise ValueError("Deep Literature stage requires research_question.")
-        output = run_deep_literature_stage(question)
+        try:
+            output = run_deep_literature_stage(question)
+        except Exception as e:
+            print(f"DEBUG DEEP LITERATURE ERROR: {e}")
+            raise
         return state.write_stage_output("deep_literature", output)
 
     if stage == "proposal":
@@ -157,13 +173,13 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
     paper_seed = request.paper
     args_list = [
         "--prompt", topic,
-        "--pi-output", state.read_active_output("pi"),
-        "--part1-literature", state.read_active_output("literature"),
-        "--research-questions", state.read_active_output("research_questions"),
-        "--research-question", state.read_active_output("research_question"),
-        "--deep-literature", state.read_active_output("deep_literature"),
-        "--proposal", state.read_active_output("proposal"),
-        "--experiment", state.read_active_output("experiment"),
+        "--pi-output", str(state.active_path("pi") or ""),
+        "--part1-literature", str(state.active_path("literature") or ""),
+        "--research-questions", str(state.active_path("research_questions") or ""),
+        "--research-question", str(state.active_path("research_question") or ""),
+        "--deep-literature", str(state.active_path("deep_literature") or ""),
+        "--proposal", str(state.active_path("proposal") or ""),
+        "--experiment", str(state.active_path("experiment") or ""),
         "--out", str(state.run_dir),
         "--iterations", "0",
         "--max-tokens", "14000",

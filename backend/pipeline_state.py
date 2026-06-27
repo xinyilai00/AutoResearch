@@ -5,6 +5,24 @@ import os
 from pathlib import Path
 from typing import Any
 
+# ── Experiment Anchor ──────────────────────────────────────────────────────────
+# Hardcoded for MVP. When we generalize, these get set dynamically per request.
+
+_EXPERIMENT_REPO_URL: str = ""
+_EXPERIMENT_HYPOTHESIS: str = ""
+
+
+def set_experiment_anchor(repo_url: str, hypothesis: str) -> None:
+    global _EXPERIMENT_REPO_URL, _EXPERIMENT_HYPOTHESIS
+    _EXPERIMENT_REPO_URL = repo_url
+    _EXPERIMENT_HYPOTHESIS = hypothesis
+
+
+def get_experiment_anchor() -> dict:
+    return {
+        "repo_url": _EXPERIMENT_REPO_URL,
+        "hypothesis": _EXPERIMENT_HYPOTHESIS,
+    }
 
 DEFAULT_RUN_DIR = Path("paper_runs/latest")
 

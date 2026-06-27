@@ -120,8 +120,11 @@ function Layout({ children, onDownloadClick }) {
 
 function App() {
   const [autonomous, setAutonomous] = useState(false);
-  const [topic, setTopic] = useState("");
-  const [litOutput, setLitOutput] = useState("");
+  const [repoUrl, setRepoUrl] = useState("https://github.com/pytorch/examples/tree/main/mnist");
+  const [hypothesis, setHypothesis] = useState(
+    "A standard two-layer CNN trained on MNIST with dropout regularization and the Adadelta optimizer can achieve ≥99% test accuracy within 14 epochs, replicating the results reported in pytorch/examples."
+  );
+  const [topic, setTopic] = useState("Convolutional Neural Networks for handwritten digit classification on MNIST");  const [litOutput, setLitOutput] = useState("");
   const [questions, setQuestions] = useState([]);
   const [selectedQuestion, setSelectedQuestion] = useState("");
   const [deepLitOutput, setDeepLitOutput] = useState("");
@@ -170,60 +173,72 @@ function App() {
     <BrowserRouter>
       <Layout onDownloadClick={() => setShowDownload(true)}>
         <Routes>
-          <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
-          <Route path="/topic" element={
-            <TopicLiteraturePage
-              autonomous={autonomous}
-              topic={topic}
-              onTopicSet={setTopic}
-              litOutput={litOutput}
-              onComplete={completeLitOutput}
-            />}
-          />
-          <Route path="/research-question" element={
-            <ResearchQuestionPage
-              autonomous={autonomous}
-              topic={topic}
-              litOutput={litOutput}
-              questions={questions}
-              onQuestionsGenerated={setQuestions}
-              selectedQuestion={selectedQuestion}
-              onComplete={completeSelectedQuestion}
-            />}
-          />
-          <Route path="/deep-literature" element={
-            <DeepLiteraturePage
-              autonomous={autonomous}
-              selectedQuestion={selectedQuestion}
-              deepLitOutput={deepLitOutput}
-              onComplete={completeDeepLitOutput}
-            />}
-          />
-          <Route path="/proposal" element={
-            <ProposalPage
-              autonomous={autonomous}
-              deepLitOutput={deepLitOutput}
-              proposalOutput={proposalOutput}
-              onComplete={completeProposalOutput}
-            />}
-          />
-          <Route path="/experiment" element={
-            <ExperimentPage
-              autonomous={autonomous}
-              proposalOutput={proposalOutput}
-              experimentOutput={experimentOutput}
-              onComplete={completeExperimentOutput}
-            />}
-          />
-          <Route path="/paper" element={
-            <PaperPage
-              autonomous={autonomous}
-              experimentOutput={experimentOutput}
-              paperOutput={paperOutput}
-              onComplete={setPaperOutput}
-            />}
-          />
-        </Routes>
+  <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
+  <Route path="/topic" element={
+    <TopicLiteraturePage
+      autonomous={autonomous}
+      topic={topic}
+      onTopicSet={setTopic}
+      litOutput={litOutput}
+      onComplete={completeLitOutput}
+      repoUrl={repoUrl}
+      hypothesis={hypothesis}
+    />}
+  />
+  <Route path="/research-question" element={
+    <ResearchQuestionPage
+      autonomous={autonomous}
+      topic={topic}
+      litOutput={litOutput}
+      questions={questions}
+      onQuestionsGenerated={setQuestions}
+      selectedQuestion={selectedQuestion}
+      onComplete={completeSelectedQuestion}
+      repoUrl={repoUrl}
+      hypothesis={hypothesis}
+    />}
+  />
+  <Route path="/deep-literature" element={
+    <DeepLiteraturePage
+      autonomous={autonomous}
+      selectedQuestion={selectedQuestion}
+      deepLitOutput={deepLitOutput}
+      onComplete={completeDeepLitOutput}
+      repoUrl={repoUrl}
+      hypothesis={hypothesis}
+    />}
+  />
+  <Route path="/proposal" element={
+    <ProposalPage
+      autonomous={autonomous}
+      deepLitOutput={deepLitOutput}
+      proposalOutput={proposalOutput}
+      onComplete={completeProposalOutput}
+      repoUrl={repoUrl}
+      hypothesis={hypothesis}
+    />}
+  />
+  <Route path="/experiment" element={
+    <ExperimentPage
+      autonomous={autonomous}
+      proposalOutput={proposalOutput}
+      experimentOutput={experimentOutput}
+      onComplete={completeExperimentOutput}
+      repoUrl={repoUrl}
+      hypothesis={hypothesis}
+    />}
+  />
+  <Route path="/paper" element={
+    <PaperPage
+      autonomous={autonomous}
+      experimentOutput={experimentOutput}
+      paperOutput={paperOutput}
+      onComplete={setPaperOutput}
+      repoUrl={repoUrl}
+      hypothesis={hypothesis}
+    />}
+  />
+</Routes>
         {showDownload && <DownloadModal onClose={() => setShowDownload(false)} />}
       </Layout>
     </BrowserRouter>

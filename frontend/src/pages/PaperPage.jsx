@@ -83,13 +83,13 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
       <h1>Paper Agent</h1>
       <p>Writes and polishes a full academic research paper based on all previous stage outputs.</p>
 
-      {/*!experimentOutput && (
+      {!experimentOutput && (
         <div className="warning-box">
           No experiment output found. Please complete the Experiment stage first.
         </div>
       )}
 
-      {/*experimentOutput && ( */}
+      {experimentOutput && (
         <div className="input-row">
           <button
             className="run-button"
@@ -98,14 +98,14 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
             {running ? "Stop" : done ? "Rerun" : "Run Paper Agent"}
           </button>
         </div>
+      )}
 
-        {status && (
-          <div className="status-indicator">
-            <div className="spinner"></div>
-            <p>{status}</p>
-          </div>
-        )}
-      {/* ) */}
+{experimentOutput && status && (
+  <div className="status-indicator">
+    <div className="spinner"></div>
+    <p>{status}</p>
+  </div>
+)}
 
       {error && <div className="error-box">{error}</div>}
 
