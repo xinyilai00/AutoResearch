@@ -8,7 +8,7 @@ from lit_agent_p2 import run_deep_literature_stage
 from pi_agent import run_pi_agent
 from pipeline_state import PipelineState
 from proposal_agent import run_proposal_stage
-from research_question_agent import parse_candidate_research_questions
+from research_question_agent import parse_research_question
 from research_question_agent import run_research_question_stage
 from review_agent import run_review_from_file
 
@@ -73,13 +73,13 @@ def main():
     research_questions_path = state.write_stage_output("research_questions", research_questions_output)
     print(research_questions_output)
 
-    questions = parse_candidate_research_questions(research_questions_output)
+    selected_question = parse_research_question(research_questions_output)
 
-    if not questions:
+    if not selected_question:
         print("\nCould not parse research questions. Paper agent will use a provisional question.")
         selected_question = "No selected research question was parsed; infer a provisional question from the research question output."
     else:
-        selected_question = user_selection(questions)
+        print("\nUsing generated research question.")
     if "| Gap addressed:" in selected_question:
         selected_question = selected_question.split("| Gap addressed:")[0].strip()
     print(f"\nSelected research question:\n{selected_question}")

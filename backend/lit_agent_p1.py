@@ -335,7 +335,7 @@ def get_response(request_id: str) -> str:
                 continue
 
             event_type = data.get("eventType")
-            print(f"DEBUG EVENT: {event_type}")  # ADD THIS
+            # print(f"DEBUG EVENT: {event_type}")
             if event_type in {"TEXT_START", "TEXT_DELTA"}:
                 full_response += data.get("data", {}).get("text", "")
             if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
@@ -345,7 +345,7 @@ def get_response(request_id: str) -> str:
         if not full_response.strip():
             raise
 
-    print(f"DEBUG FULL RESPONSE LENGTH: {len(full_response)}")  # ADD THIS
+    # print(f"DEBUG FULL RESPONSE LENGTH: {len(full_response)}")
     return full_response
 
 
