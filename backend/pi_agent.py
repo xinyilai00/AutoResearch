@@ -1,10 +1,17 @@
-from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+try:
+    from backend.config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+except ImportError:
+    from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+
+try:
+    from backend.pipeline_state import get_experiment_anchor
+except ImportError:
+    from pipeline_state import get_experiment_anchor
 
 import requests
 import json
 
 
-# PI System Prompt
 PI_SYSTEM_PROMPT = """
 You are the PI (Principal Investigator) of an autonomous research pipeline. Your only job is to take a raw research topic provided by the user and convert it into a clean, structured search query that can be used to search academic databases like Semantic Scholar, arXiv, and OpenAlex. Your output will be used as the input for an LLM that does a literature review.
 
@@ -25,6 +32,7 @@ OUTPUT in this exact format: (copy exactly, no extra characters, no markdown, no
 - Alternative queries: [3-4 variations using different terminology]
 - Key terms: [5-10 individual keywords relevant to this topic]
 """
+
 
 def get_response(request_id):
     headers = {
@@ -57,7 +65,17 @@ def get_response(request_id):
     print(full_response)
     return full_response
 
+
 def run_pi_agent(user_topic):
+    anchor = get_experiment_anchor()
+    anchor_context = f"""
+EXPERIMENT CONTEXT:
+- GitHub Repo being replicated: {anchor['repo_url']}
+- Hypothesis: {anchor['hypothesis']}
+
+You are generating search queries specifically to support a replication study of the above experiment. Keep all queries scoped to this context.
+"""
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {API_KEY}",
@@ -66,7 +84,7 @@ def run_pi_agent(user_topic):
 
     body = {
         "agentId": AGENT_ID,
-        "userInput": PI_SYSTEM_PROMPT + "\n\nResearch topic: " + user_topic
+        "userInput": anchor_context + PI_SYSTEM_PROMPT + "\n\nResearch topic: " + user_topic
     }
 
     if SEND_MODEL_TO_AGENT_API and MODEL:
@@ -81,12 +99,11 @@ def run_pi_agent(user_topic):
     data = response.json()
     request_id = data["data"]["requestId"]
     print("Got requestId:", request_id)
-    
+
     print("\n--- Agent Response ---")
     return get_response(request_id)
 
 
 if __name__ == "__main__":
-    # create_principal()  # already done, don't run again
     user_topic = input("Enter your research topic: ")
-    run_pi_agent(user_topic)
+    print(run_pi_agent(user_topic))

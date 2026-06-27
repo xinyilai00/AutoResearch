@@ -1,7 +1,10 @@
-from unittest import result
+try:
+    from backend.pipeline_state import get_experiment_anchor
+except ImportError:
+    from pipeline_state import get_experiment_anchor
 
 try:
-    from .config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+    from backend.config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 except ImportError:
     from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
@@ -90,40 +93,18 @@ def parse_pi_output(pi_output: str) -> dict:
 def clean_arxiv_query(query: str, max_words: int = 8) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", query)
     stopwords = {
-        "the",
-        "and",
-        "for",
-        "from",
-        "with",
-        "that",
-        "this",
-        "what",
-        "when",
-        "where",
-        "which",
-        "into",
-        "can",
-        "are",
-        "how",
+        "the", "and", "for", "from", "with", "that", "this",
+        "what", "when", "where", "which", "into", "can", "are", "how",
     }
-    words = [
-        word
-        for word in cleaned.split()
-        if len(word) > 2 and word.lower() not in stopwords
-    ]
+    words = [w for w in cleaned.split() if len(w) > 2 and w.lower() not in stopwords]
     return " ".join(words[:max_words])
 
 
 def search_semantic_scholar(query: str, limit: int = 10) -> list[dict]:
-    """Search Semantic Scholar API."""
     try:
         response = requests.get(
             "https://api.semanticscholar.org/graph/v1/paper/search",
-            params={
-                "query": query,
-                "limit": limit,
-                "fields": "title,abstract,year,authors,citationCount"
-            },
+            params={"query": query, "limit": limit, "fields": "title,abstract,year,authors,citationCount"},
             timeout=10
         )
         data = response.json()
@@ -142,35 +123,27 @@ def search_semantic_scholar(query: str, limit: int = 10) -> list[dict]:
     except Exception as e:
         print(f"Semantic Scholar error: {e}")
         return []
-    
+
+
 def search_arxiv(query: str, limit: int = 10) -> list[dict]:
-    """Search arXiv API."""
     try:
         arxiv_query = clean_arxiv_query(query)
         if not arxiv_query:
             return []
-
         response = requests.get(
             "https://export.arxiv.org/api/query",
-            params={
-                "search_query": f"all:{arxiv_query}",
-                "max_results": limit,
-                "sortBy": "relevance"
-            },
+            params={"search_query": f"all:{arxiv_query}", "max_results": limit, "sortBy": "relevance"},
             timeout=60
         )
-
         if response.status_code != 200:
             print(f"arXiv error: HTTP {response.status_code}")
             return []
-
         import xml.etree.ElementTree as ET
         try:
             root = ET.fromstring(response.text)
         except ET.ParseError:
             print(f"arXiv error: invalid response")
             return []
-
         ns = {"atom": "http://www.w3.org/2005/Atom"}
         papers = []
         for entry in root.findall("atom:entry", ns):
@@ -180,10 +153,7 @@ def search_arxiv(query: str, limit: int = 10) -> list[dict]:
                     "title": entry.findtext("atom:title", "", ns).strip(),
                     "abstract": abstract,
                     "year": entry.findtext("atom:published", "", ns)[:4],
-                    "authors": [
-                        a.findtext("atom:name", "", ns)
-                        for a in entry.findall("atom:author", ns)[:3]
-                    ],
+                    "authors": [a.findtext("atom:name", "", ns) for a in entry.findall("atom:author", ns)[:3]],
                     "citations": None,
                     "source": "arXiv"
                 })
@@ -192,23 +162,18 @@ def search_arxiv(query: str, limit: int = 10) -> list[dict]:
         print(f"arXiv error: {e}")
         return []
 
+
 def search_openalex(query: str, limit: int = 10) -> list[dict]:
-    """Search OpenAlex API."""
     try:
         response = requests.get(
             "https://api.openalex.org/works",
-            params={
-                "search": query,
-                "per-page": limit,
-                "select": "title,abstract_inverted_index,publication_year,authorships,cited_by_count"
-            },
+            params={"search": query, "per-page": limit, "select": "title,abstract_inverted_index,publication_year,authorships,cited_by_count"},
             headers={"User-Agent": "AutoResearch/1.0 (research pipeline)"},
             timeout=10
         )
         data = response.json()
         papers = []
         for p in data.get("results", []):
-            # OpenAlex stores abstracts as inverted index — reconstruct it
             inv = p.get("abstract_inverted_index")
             if not inv:
                 continue
@@ -217,16 +182,11 @@ def search_openalex(query: str, limit: int = 10) -> list[dict]:
                 for pos in positions:
                     word_positions.append((pos, word))
             abstract = " ".join(w for _, w in sorted(word_positions))
-
             papers.append({
                 "title": p.get("title", ""),
                 "abstract": abstract,
                 "year": p.get("publication_year", ""),
-                "authors": [
-                    a["author"]["display_name"]
-                    for a in p.get("authorships", [])[:3]
-                    if a.get("author")
-                ],
+                "authors": [a["author"]["display_name"] for a in p.get("authorships", [])[:3] if a.get("author")],
                 "citations": p.get("cited_by_count", 0),
                 "source": "OpenAlex"
             })
@@ -234,24 +194,19 @@ def search_openalex(query: str, limit: int = 10) -> list[dict]:
     except Exception as e:
         print(f"OpenAlex error: {e}")
         return []
-    
+
+
 # ─────────────────────────────────────────────
 # SEARCH ORCHESTRATION
 # ─────────────────────────────────────────────
 
 def run_all_searches(parsed: dict) -> list[dict]:
-    """Run searches across all three databases in parallel."""
     queries = [parsed["primary"]] + parsed["alternatives"]
     all_papers = []
     seen_titles = set()
 
-    # Separate arXiv from other tasks
     arxiv_tasks = [("arxiv", q) for q in queries]
-    other_tasks = [
-        (source, q)
-        for q in queries
-        for source in ("semantic_scholar", "openalex")
-    ]
+    other_tasks = [(source, q) for q in queries for source in ("semantic_scholar", "openalex")]
 
     def run_search(task):
         source, query = task
@@ -271,13 +226,11 @@ def run_all_searches(parsed: dict) -> list[dict]:
                 seen_titles.add(title_key)
                 all_papers.append(paper)
 
-    # Run Semantic Scholar and OpenAlex in parallel
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(run_search, task): task for task in other_tasks}
         for future in as_completed(futures):
             add_papers(future.result())
 
-    # Run arXiv sequentially with delay to avoid rate limiting
     for task in arxiv_tasks:
         results = run_search(task)
         add_papers(results)
@@ -285,6 +238,7 @@ def run_all_searches(parsed: dict) -> list[dict]:
 
     print(f"Found {len(all_papers)} unique papers across all sources.")
     return all_papers
+
 
 # ─────────────────────────────────────────────
 # FORMAT PAPERS FOR LLM
@@ -311,13 +265,7 @@ def author_year_label(paper: dict) -> str:
 
 
 def format_papers_for_llm(papers: list[dict], max_papers: int = 30) -> str:
-    """Format paper list without numeric citation labels."""
-    papers_sorted = sorted(
-        papers,
-        key=lambda p: (p.get("citations") or 0),
-        reverse=True
-    )[:max_papers]
-
+    papers_sorted = sorted(papers, key=lambda p: (p.get("citations") or 0), reverse=True)[:max_papers]
     lines = []
     for p in papers_sorted:
         citation_key = author_year_label(p)
@@ -348,20 +296,13 @@ def replace_numeric_citation_markers(text: str, citation_lookup: dict[str, str])
             bounds = [part.strip() for part in raw_marker.split("-", 1)]
             if all(part.isdigit() for part in bounds):
                 start, end = int(bounds[0]), int(bounds[1])
-                labels = [
-                    citation_lookup.get(str(index), "citation TODO: author-year needed")
-                    for index in range(start, end + 1)
-                ]
+                labels = [citation_lookup.get(str(i), "citation TODO: author-year needed") for i in range(start, end + 1)]
                 return "(" + "; ".join(labels) + ")"
-
-        labels = [
-            citation_lookup.get(number.strip(), "citation TODO: author-year needed")
-            for number in raw_marker.split(",")
-            if number.strip()
-        ]
+        labels = [citation_lookup.get(n.strip(), "citation TODO: author-year needed") for n in raw_marker.split(",") if n.strip()]
         return "(" + "; ".join(labels) + ")"
 
     return re.sub(r"\[(\d+(?:\s*,\s*\d+)*|\d+\s*-\s*\d+)\]", replacement, text)
+
 
 # ─────────────────────────────────────────────
 # DIANJIN API CALLS
@@ -394,6 +335,7 @@ def get_response(request_id: str) -> str:
                 continue
 
             event_type = data.get("eventType")
+            print(f"DEBUG EVENT: {event_type}")  # ADD THIS
             if event_type in {"TEXT_START", "TEXT_DELTA"}:
                 full_response += data.get("data", {}).get("text", "")
             if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
@@ -403,14 +345,19 @@ def get_response(request_id: str) -> str:
         if not full_response.strip():
             raise
 
-    for i in range(1, len("SUMMARY OF EXISTING WORK")):
-        if full_response.startswith("SUMMARY OF EXISTING WORK"[i:]):
-            full_response = "SUMMARY OF EXISTING WORK"[:i] + full_response
-            break
-
+    print(f"DEBUG FULL RESPONSE LENGTH: {len(full_response)}")  # ADD THIS
     return full_response
 
+
 def run_literature_agent(papers_text: str, topic: str) -> str:
+    anchor = get_experiment_anchor()
+    anchor_context = f"""
+EXPERIMENT CONTEXT:
+- GitHub Repo being replicated: {anchor['repo_url']}
+- Hypothesis: {anchor['hypothesis']}
+
+You are conducting a literature review specifically to support a replication study of the above experiment. Focus your gap analysis on topics directly relevant to this replication: CNN architectures, MNIST benchmarks, dropout regularization, and the Adadelta optimizer.
+"""
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {API_KEY}",
@@ -419,10 +366,12 @@ def run_literature_agent(papers_text: str, topic: str) -> str:
     body = {
         "agentId": AGENT_ID,
         "userInput": (
-            LITERATURE_SYSTEM_PROMPT
+            anchor_context
+            + LITERATURE_SYSTEM_PROMPT
             + f"\n\nResearch topic: {topic}"
             + f"\n\nPapers retrieved:\n{papers_text}"
-        )
+        ),
+        "maxTokens": 8000
     }
     if SEND_MODEL_TO_AGENT_API and MODEL:
         body["model"] = MODEL
@@ -437,6 +386,7 @@ def run_literature_agent(papers_text: str, topic: str) -> str:
     print("Got requestId:", request_id)
     result = get_response(request_id)
     return replace_numeric_citation_markers(result, citation_lookup_from_papers_text(papers_text))
+
 
 # ─────────────────────────────────────────────
 # MAIN
@@ -457,9 +407,8 @@ def run_literature_stage(pi_output: str, original_topic: str) -> str:
 
     return result
 
-# FOR STANDALONE TESTING — paste a PI output directly
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     sample_pi_output = """
 Primary search query: transformer architecture efficiency neural networks
 Alternative queries: efficient transformers, attention mechanism optimization, lightweight transformer models, transformer compression techniques

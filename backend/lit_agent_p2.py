@@ -238,6 +238,8 @@ def run_deep_searches(research_question: str) -> list[dict]:
 
     def add_papers(results):
         for paper in results:
+            if not paper.get("title"):
+                continue
             title_key = paper["title"].lower().strip()
             if title_key not in seen_titles and paper["abstract"]:
                 seen_titles.add(title_key)
