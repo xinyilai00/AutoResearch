@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import re
 import shutil
 import subprocess
@@ -39,6 +41,7 @@ def run_command(command: list[str], cwd: Path, timeout: int = 1800) -> tuple[int
             stderr=subprocess.PIPE,
             text=True,
             timeout=timeout,
+            env=os.environ,
         )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
@@ -93,7 +96,7 @@ def run_experiment_stage(
     returncode, stdout, stderr = run_command(
         ["git", "clone", "--depth", "1", "https://github.com/pytorch/examples.git", str(CLONE_DIR)],
         cwd=Path("."),
-        timeout=120,
+        timeout=600,
     )
     if returncode != 0:
         return "# Experiment Failed\n\nFailed to clone repository.\n\nError: " + stderr
