@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete }) {
+export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete, repoUrl, hypothesis }) {
   const navigate = useNavigate();
   const [output, setOutput] = useState(experimentOutput || "");
   const [running, setRunning] = useState(false);
@@ -41,7 +41,12 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
       const res = await fetch("http://localhost:8000/api/stages/experiment/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedback: feedback || undefined }),
+        body: JSON.stringify({ 
+          proposal: proposalOutput,
+          feedback: feedback || undefined,
+          repo_url: repoUrl,
+          hypothesis: hypothesis,
+        }),
         signal: abortControllerRef.current.signal,
       });
 
@@ -84,6 +89,13 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
       )}
 
       {error && <div className="error-box">{error}</div>}
+
+      {running && (
+        <div className="status-indicator">
+          <div className="spinner"></div>
+          <p>Running experiment — training on CPU may take 15-20 minutes. Do not close this page.</p>
+        </div>
+      )}
 
       {output && (
         <div className="output-box">
