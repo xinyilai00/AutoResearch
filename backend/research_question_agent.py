@@ -33,6 +33,9 @@ Rules:
 - The question must be directly tied to the selected repository and its benchmark workflow
 - The question must be empirically answerable by running or adapting the selected repository workflow
 - The question must point toward measurable datasets, methods, or benchmark metrics
+- Do NOT combine the selected repository with unrelated default examples or stale context from another repository
+- Do NOT introduce comparison baselines, datasets, or model families unless they are clearly supported by the selected repository context or literature review
+- If the selected repository is for tabular, anomaly, recommender, or database benchmarks, do NOT mention MNIST, CNNs, images, or PyTorch unless those terms appear in the selected repository context
 - No jargon, no sub-clauses, no methodology embedded in the question
 - Return plain text only
 - Do not add any text before RESEARCH QUESTION or after the question itself
@@ -114,7 +117,7 @@ SELECTED BENCHMARK CONTEXT:
 - Repository URL: {anchor['repo_url']}
 - Hypothesis: {anchor['hypothesis']}
 
-Generate a research question that directly frames a benchmark-oriented study using this selected repository. Keep the question aligned with the repository's likely datasets, workflows, and measurable benchmark metrics.
+Generate a research question that directly frames a benchmark-oriented study using this selected repository only. Keep the question aligned with this repository's likely datasets, workflows, and measurable benchmark metrics, and ignore stale/default context from unrelated repositories.
 """
 
     headers = {

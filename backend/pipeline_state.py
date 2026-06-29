@@ -11,15 +11,12 @@ except ImportError:
     from repo_library import RepoMetadata, select_repo_for_prompt
 
 # ── Experiment Anchor ──────────────────────────────────────────────────────────
-# Hardcoded for MVP. When we generalize, these get set dynamically per request.
+# Set dynamically from the user's prompt before stage agents run.
 
-_EXPERIMENT_REPO_URL: str = "https://github.com/ncorpron/MNIST_CNN_with_PyTorch"
-_EXPERIMENT_REPO_ID: str = "mnist_cnn_pytorch"
-_EXPERIMENT_REPO_NAME: str = "ncorpron/MNIST_CNN_with_PyTorch"
-_EXPERIMENT_HYPOTHESIS: str = (
-    "A convolutional neural network trained from scratch with PyTorch can achieve high "
-    "classification accuracy on the MNIST handwritten digit benchmark."
-)
+_EXPERIMENT_REPO_URL: str = ""
+_EXPERIMENT_REPO_ID: str = ""
+_EXPERIMENT_REPO_NAME: str = ""
+_EXPERIMENT_HYPOTHESIS: str = ""
 
 
 def generate_hypothesis_from_repo(prompt: str, repo: RepoMetadata) -> str:
@@ -54,6 +51,9 @@ def configure_experiment_anchor_from_prompt(prompt: str) -> dict:
 
 
 def get_experiment_anchor() -> dict:
+    if not _EXPERIMENT_REPO_URL or not _EXPERIMENT_HYPOTHESIS:
+        configure_experiment_anchor_from_prompt("general benchmark study")
+
     return {
         "repo_id": _EXPERIMENT_REPO_ID,
         "repo_name": _EXPERIMENT_REPO_NAME,
