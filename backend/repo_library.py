@@ -25,6 +25,8 @@ REPO_LIBRARY: list[RepoMetadata] = [
         "metrics": ["validation accuracy", "test accuracy", "training loss"],
         "dependencies": ["python", "torch", "torchvision"],
         "entrypoints": ["train.py"],
+        "requirements_files": ["requirements.txt"],
+        "source_files": ["train.py", "README.md"],
         "benchmark_notes": "Good small image-classification benchmark with a clear >=99% accuracy target.",
         "best_for_prompts": [
             "replicate a CNN on MNIST",
@@ -54,6 +56,8 @@ REPO_LIBRARY: list[RepoMetadata] = [
         "metrics": ["accuracy", "F1", "ROC AUC", "RMSE", "MAE", "R2"],
         "dependencies": ["python", "pandas", "scikit-learn", "pmlb"],
         "entrypoints": ["Python API examples"],
+        "requirements_files": ["pyproject.toml", "setup.py", "requirements.txt"],
+        "source_files": ["README.md", "docs/usage.md", "pmlb/__init__.py"],
         "benchmark_notes": "Strong default for non-image tabular benchmark studies.",
         "best_for_prompts": [
             "compare classifiers on tabular benchmark data",
@@ -83,6 +87,8 @@ REPO_LIBRARY: list[RepoMetadata] = [
         "metrics": ["NAB score", "precision", "recall", "F1", "detection delay"],
         "dependencies": ["python", "numpy", "pandas"],
         "entrypoints": ["run.py", "benchmark scripts"],
+        "requirements_files": ["requirements.txt", "setup.py"],
+        "source_files": ["README.md", "run.py", "nab/runner.py"],
         "benchmark_notes": "Good fit for anomaly detection prompts where labels and scoring matter.",
         "best_for_prompts": [
             "detect anomalies in server metrics",
@@ -112,6 +118,8 @@ REPO_LIBRARY: list[RepoMetadata] = [
         "metrics": ["precision@k", "MAP@k", "NDCG@k", "AUC", "recommendation latency"],
         "dependencies": ["python", "numpy", "scipy", "implicit"],
         "entrypoints": ["examples", "Python API"],
+        "requirements_files": ["pyproject.toml", "setup.py", "requirements.txt"],
+        "source_files": ["README.md", "examples/lastfm.py", "examples/movielens.py"],
         "benchmark_notes": "Focused library for fast implicit-feedback recommender experiments.",
         "best_for_prompts": [
             "recommend items from user interaction logs",
@@ -175,6 +183,8 @@ def format_repo_metadata(repo: RepoMetadata) -> str:
             f"- Datasets: {datasets}",
             f"- Metrics: {', '.join(repo['metrics'])}",
             f"- Dependencies: {', '.join(repo['dependencies'])}",
+            f"- Requirement/config candidates: {', '.join(repo.get('requirements_files', []))}",
+            f"- Source/example candidates: {', '.join(repo.get('source_files', []))}",
             f"- Difficulty: {repo['difficulty']}",
             f"- Fit notes: {repo['benchmark_notes']}",
         ]
