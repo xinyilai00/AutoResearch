@@ -67,7 +67,7 @@ def run_stage(stage: str, request: StageRunRequest) -> dict:
     stage = normalize_stage_name(stage)
     print(f"DEBUG: normalized stage = {stage}")
     state = PipelineState(request.run_dir)
-    prompt_for_anchor = request.topic or request.research_question
+    prompt_for_anchor = request.topic
     if prompt_for_anchor:
         if request.topic:
             state.set_metadata("topic", request.topic)
