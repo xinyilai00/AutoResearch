@@ -6,8 +6,10 @@ from pathlib import Path
 
 try:
     from backend.pipeline_state import get_experiment_anchor
+    from backend.repo_library import format_repo_metadata, get_repo_by_id, select_repo_for_prompt
 except ImportError:
     from pipeline_state import get_experiment_anchor
+    from repo_library import format_repo_metadata, get_repo_by_id, select_repo_for_prompt
 
 
 PYTORCH_MNIST_MAIN_PY = "https://raw.githubusercontent.com/ncorpron/MNIST_CNN_with_PyTorch/main/train.py"
@@ -59,87 +61,79 @@ def sentence_summary(text: str, max_sentences: int = 2) -> str:
 
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
-    print("\n[Proposal Agent] Fetching ncorpron/MNIST_CNN_with_PyTorch repo...")    
+    print("\n[Proposal Agent] Building proposal from selected repo metadata...")
     anchor = get_experiment_anchor()
+    repo_id = anchor.get("repo_id", "")
     repo_url = anchor["repo_url"]
     hypothesis = anchor["hypothesis"]
 
-    # Fetch the actual source files from the repo
-    main_py = fetch_url(PYTORCH_MNIST_MAIN_PY)
-    requirements = fetch_url(PYTORCH_MNIST_REQUIREMENTS)
-
     deep_lit = sentence_summary(read_text_or_path(deep_literature_review), max_sentences=2)
+    selected_repo = get_repo_by_id(repo_id) or select_repo_for_prompt(
+        "\n".join([research_question, deep_lit, repo_url, hypothesis])
+    )
+    datasets = selected_repo.get("datasets", [])
+    primary_dataset = datasets[0] if datasets else {}
+    dependencies = selected_repo.get("dependencies", [])
+    entrypoints = selected_repo.get("entrypoints", [])
+    metrics = selected_repo.get("metrics", [])
+    tasks = selected_repo.get("tasks", [])
 
-    # Parse key hyperparameters from main.py
-    hyperparameters = {
-        "batch_size": 128,
-        "epochs": 10,
-        "learning_rate": 1e-3,
-        "optimizer": "Adam",
-        "seed": 42,
-    }
-
-    # Architecture summary
-    architecture = {
-        "model": "SimpleCNN (see models.py)",
-        "loss": "CrossEntropyLoss",
-        "optimizer": "Adam (lr=1e-3)",
-        "data_augmentation": "Normalize((0.1307,), (0.3081,))",
-    }
+    main_py = ""
+    requirements = ""
+    if selected_repo["id"] == "mnist_cnn_pytorch":
+        main_py = fetch_url(PYTORCH_MNIST_MAIN_PY)
+        requirements = fetch_url(PYTORCH_MNIST_REQUIREMENTS)
 
     proposal = f"""PROPOSAL SUMMARY
 Research question: {research_question}
 Repo: {repo_url}
 Hypothesis: {hypothesis}
 
+LOCAL REPO LIBRARY MATCH:
+{format_repo_metadata(selected_repo)}
+
 EXPERIMENT OVERVIEW:
-This proposal outlines a replication study of the ncorpron/MNIST_CNN_with_PyTorch experiment.
-The goal is to run the exact code from the repository and verify classification accuracy
-on the MNIST handwritten digit dataset within 10 training epochs.
+This proposal outlines a benchmark-oriented replication study using {selected_repo['name']}.
+The goal is to run or adapt the repository's documented workflow for the selected prompt,
+use its public dataset resources, and evaluate the result with the repository's benchmark metrics.
 
 REPOSITORY:
 - URL: {repo_url}
-- Key files:
-  - train.py — training script
-  - requirements.txt — dependencies
+- Expected entrypoints: {', '.join(entrypoints) if entrypoints else 'Inspect repository examples and scripts'}
+- Dependencies: {', '.join(dependencies) if dependencies else 'Inspect repository requirements'}
 
-ARCHITECTURE:
-{json.dumps(architecture, indent=2)}
-
-HYPERPARAMETERS:
-{json.dumps(hyperparameters, indent=2)}
+BENCHMARK TASKS:
+{json.dumps(tasks, indent=2)}
 
 DATASET:
-- Name: MNIST Handwritten Digit Dataset
-- Source: Auto-downloaded via torchvision.datasets.MNIST (no manual download needed)
-- Train: 60,000 images
-- Test: 10,000 images
-- Format: 28x28 grayscale images, 10 classes (digits 0-9)
+{json.dumps(primary_dataset, indent=2)}
+
+METRICS:
+{json.dumps(metrics, indent=2)}
 
 REPLICATION STEPS:
 1. Clone the repository:
-   git clone https://github.com/ncorpron/MNIST_CNN_with_PyTorch.git
-2. Install dependencies:
-   pip install -r requirements.txt
-3. Run training:
-   python train.py
-4. Capture output: epoch-by-epoch loss, train accuracy, and validation accuracy
+   git clone {repo_url}
+2. Create or reuse an isolated virtual environment.
+3. Install only the dependencies required by the selected benchmark.
+4. Run the documented entrypoint or example script.
+5. Capture benchmark metrics, runtime, and any failure logs.
 
 SUCCESS CRITERIA:
-- Validation accuracy ≥ 99% within 10 epochs
-- Training completes without errors
-- Results are logged and captured for the paper
+- The benchmark runs without errors on the selected public dataset.
+- The output includes at least one primary metric: {metrics[0] if metrics else 'benchmark performance'}.
+- Results are logged and captured for the paper.
 
 EXPECTED OUTPUT:
-- Final test accuracy (target: ≥99%)
-- Per-epoch training loss and test accuracy
-- Total training time
+- Selected repo and dataset provenance
+- Benchmark metric values
+- Runtime and reproducibility notes
 
 REQUIREMENTS FILE CONTENTS:
-{requirements if requirements else "Could not fetch requirements.txt"}
+{requirements if requirements else "No repo-specific requirements were fetched for this metadata entry."}
 
 MAIN.PY EXCERPT (first 3000 chars):
-{main_py[:3000] if main_py else "Could not fetch main.py"}
+{main_py[:3000] if main_py else "No repo-specific source excerpt was fetched for this metadata entry."}
 
 DEEP LITERATURE CONTEXT:
 {deep_lit}

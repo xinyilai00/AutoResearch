@@ -15,7 +15,7 @@ from backend.lit_agent_p2 import run_deep_literature_stage
 from backend.paper_agent import parse_args as parse_paper_args
 from backend.paper_agent import run_agent as run_paper_agent
 from backend.pi_agent import run_pi_agent
-from backend.pipeline_state import PipelineState, set_experiment_anchor
+from backend.pipeline_state import PipelineState, configure_experiment_anchor_from_prompt
 from backend.proposal_agent import run_proposal_stage
 from backend.research_question_agent import run_research_question_stage
 from backend.review_agent import run_review_from_file
@@ -67,11 +67,15 @@ def run_stage(stage: str, request: StageRunRequest) -> dict:
     stage = normalize_stage_name(stage)
     print(f"DEBUG: normalized stage = {stage}")
     state = PipelineState(request.run_dir)
-    if request.topic:
-        state.set_metadata("topic", request.topic)
-
-    if request.repo_url and request.hypothesis:
-        set_experiment_anchor(request.repo_url, request.hypothesis)
+    prompt_for_anchor = request.topic or request.research_question
+    if prompt_for_anchor:
+        if request.topic:
+            state.set_metadata("topic", request.topic)
+        anchor = configure_experiment_anchor_from_prompt(prompt_for_anchor)
+        state.set_metadata("selected_repo_id", anchor["repo_id"])
+        state.set_metadata("selected_repo_name", anchor["repo_name"])
+        state.set_metadata("selected_repo_url", anchor["repo_url"])
+        state.set_metadata("hypothesis", anchor["hypothesis"])
 
     try:
         if request.feedback:

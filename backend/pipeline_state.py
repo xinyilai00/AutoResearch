@@ -5,24 +5,58 @@ import os
 from pathlib import Path
 from typing import Any
 
+try:
+    from backend.repo_library import RepoMetadata, select_repo_for_prompt
+except ImportError:
+    from repo_library import RepoMetadata, select_repo_for_prompt
+
 # ── Experiment Anchor ──────────────────────────────────────────────────────────
 # Hardcoded for MVP. When we generalize, these get set dynamically per request.
 
 _EXPERIMENT_REPO_URL: str = "https://github.com/ncorpron/MNIST_CNN_with_PyTorch"
+_EXPERIMENT_REPO_ID: str = "mnist_cnn_pytorch"
+_EXPERIMENT_REPO_NAME: str = "ncorpron/MNIST_CNN_with_PyTorch"
 _EXPERIMENT_HYPOTHESIS: str = (
     "A convolutional neural network trained from scratch with PyTorch can achieve high "
     "classification accuracy on the MNIST handwritten digit benchmark."
 )
 
 
-def set_experiment_anchor(repo_url: str, hypothesis: str) -> None:
-    global _EXPERIMENT_REPO_URL, _EXPERIMENT_HYPOTHESIS
+def generate_hypothesis_from_repo(prompt: str, repo: RepoMetadata) -> str:
+    primary_task = repo.get("tasks", ["the selected benchmark task"])[0]
+    primary_dataset = repo.get("datasets", [{}])[0].get("name", "the selected public dataset")
+    primary_metric = repo.get("metrics", ["benchmark performance"])[0]
+    return (
+        f"Using {repo['name']} on {primary_dataset}, this study tests whether {primary_task} "
+        f"can produce measurable improvements or reliable performance for the prompt: "
+        f"{prompt.strip()}. The primary evaluation signal is {primary_metric}."
+    )
+
+
+def set_experiment_anchor(repo_url: str, hypothesis: str, repo_id: str = "custom", repo_name: str = "custom") -> None:
+    global _EXPERIMENT_REPO_URL, _EXPERIMENT_HYPOTHESIS, _EXPERIMENT_REPO_ID, _EXPERIMENT_REPO_NAME
     _EXPERIMENT_REPO_URL = repo_url
     _EXPERIMENT_HYPOTHESIS = hypothesis
+    _EXPERIMENT_REPO_ID = repo_id
+    _EXPERIMENT_REPO_NAME = repo_name
+
+
+def configure_experiment_anchor_from_prompt(prompt: str) -> dict:
+    selected_repo = select_repo_for_prompt(prompt)
+    hypothesis = generate_hypothesis_from_repo(prompt, selected_repo)
+    set_experiment_anchor(
+        selected_repo["url"],
+        hypothesis,
+        repo_id=selected_repo["id"],
+        repo_name=selected_repo["name"],
+    )
+    return get_experiment_anchor()
 
 
 def get_experiment_anchor() -> dict:
     return {
+        "repo_id": _EXPERIMENT_REPO_ID,
+        "repo_name": _EXPERIMENT_REPO_NAME,
         "repo_url": _EXPERIMENT_REPO_URL,
         "hypothesis": _EXPERIMENT_HYPOTHESIS,
     }
