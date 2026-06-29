@@ -40,8 +40,6 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
         body: JSON.stringify({
           topic: topic,
           literature: litOutput,
-          repo_url: repoUrl,
-          hypothesis: hypothesis,
         }),
         signal: signal
       });
@@ -67,9 +65,7 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          research_question: question,
-          repo_url: repoUrl,
-          hypothesis: hypothesis,
+          research_question: question
         })
       });
     } catch (err) {

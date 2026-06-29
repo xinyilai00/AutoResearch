@@ -20,13 +20,9 @@ _EXPERIMENT_HYPOTHESIS: str = ""
 
 
 def generate_hypothesis_from_repo(prompt: str, repo: RepoMetadata) -> str:
-    primary_task = repo.get("tasks", ["the selected benchmark task"])[0]
-    primary_dataset = repo.get("datasets", [{}])[0].get("name", "the selected public dataset")
-    primary_metric = repo.get("metrics", ["benchmark performance"])[0]
     return (
-        f"Using {repo['name']} on {primary_dataset}, this study tests whether {primary_task} "
-        f"can produce measurable improvements or reliable performance for the prompt: "
-        f"{prompt.strip()}. The primary evaluation signal is {primary_metric}."
+        f"Using {repo['name']}, this study investigates the following: "
+        f"{prompt.strip()}."
     )
 
 

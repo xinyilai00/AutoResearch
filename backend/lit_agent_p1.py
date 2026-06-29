@@ -371,6 +371,7 @@ You are conducting a literature review to support a benchmark-oriented study usi
             + LITERATURE_SYSTEM_PROMPT
             + f"\n\nResearch topic: {topic}"
             + f"\n\nPapers retrieved:\n{papers_text}"
+            + "\n\nIMPORTANT: Begin your response immediately with 'SUMMARY OF EXISTING WORK:'. Do not write any introductory sentences or explain what you are about to do."
         ),
         "maxTokens": 8000
     }

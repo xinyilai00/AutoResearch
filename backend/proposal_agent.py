@@ -6,48 +6,77 @@ from pathlib import Path
 
 try:
     from backend.pipeline_state import get_experiment_anchor
-    from backend.repo_library import format_repo_metadata, get_repo_by_id, select_repo_for_prompt
+    from backend.repo_library import get_repo_by_id, select_repo_for_prompt
+    from backend.agent_api import call_agent_api
 except ImportError:
     from pipeline_state import get_experiment_anchor
-    from repo_library import format_repo_metadata, get_repo_by_id, select_repo_for_prompt
-
+    from repo_library import get_repo_by_id, select_repo_for_prompt
+    from agent_api import call_agent_api
 
 RAW_GITHUB_BASE = "https://raw.githubusercontent.com"
+GITHUB_API_BASE = "https://api.github.com"
+
+PROPOSAL_SYSTEM_PROMPT = """You are a research engineer in an autonomous research pipeline. You will be given a GitHub repository README and file tree.
+
+Your job is to produce a JSON object describing exactly how to run an experiment from this repository.
+
+RULES:
+- Reply with JSON only. No explanation, no markdown fences, no preamble.
+- install_commands: list of pip package names to install, WITHOUT version pins. e.g. ["numpy", "pandas", "nab"]. Do not include "pip install" prefix.
+- run_script: a complete, valid, standalone Python script as a single string that runs the experiment and prints results to stdout. Use only packages from install_commands. Must be runnable as-is.
+- data_setup_commands: list of shell commands to download or prepare data. Empty list if data is already included in the repo.
+- expected_metric: the primary metric name to look for in stdout.
+- notes: any important caveats about running this repo.
+
+Example output:
+{
+  "install_commands": ["numpy", "pandas", "nab"],
+  "run_script": "from nab.runner import Runner\\nfrom nab.detectors.null.null_detector import NullDetector\\nrunner = Runner(dataDir='data', resultsDir='results', labelPath='labels/combined_windows.json', profilesPath='config/profiles.json', thresholdPath='config/thresholds.json')\\nrunner.initialize()\\nrunner.detect({'null': NullDetector})\\nthresholds = runner.optimize(['null'])\\nrunner.score(['null'], thresholds)\\nrunner.normalize()",
+  "data_setup_commands": [],
+  "expected_metric": "NAB score",
+  "notes": "Data is included in the repo. Results written to results/final_results.json."
+}
+"""
 
 
-def fetch_url(url: str) -> str:
+def fetch_url(url: str, headers: dict = {}) -> str:
     try:
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "AutoResearch-Proposal"}
-        )
-        with urllib.request.urlopen(request, timeout=15) as response:
+        req = urllib.request.Request(url, headers={"User-Agent": "AutoResearch-Proposal", **headers})
+        with urllib.request.urlopen(req, timeout=15) as response:
             return response.read().decode("utf-8")
     except Exception as e:
         print(f"[Proposal Agent] Failed to fetch {url}: {e}")
         return ""
 
 
-def github_raw_url(repo_name: str, branch: str, file_path: str) -> str:
-    return f"{RAW_GITHUB_BASE}/{repo_name}/{branch}/{file_path}"
-
-
-def fetch_repo_file(repo_name: str, file_path: str) -> tuple[str, str]:
+def fetch_raw_file(repo_name: str, filename: str) -> str:
     for branch in ("main", "master"):
-        url = github_raw_url(repo_name, branch, file_path)
+        url = f"{RAW_GITHUB_BASE}/{repo_name}/{branch}/{filename}"
         content = fetch_url(url)
         if content.strip():
-            return file_path, content
-    return file_path, ""
+            print(f"[Proposal Agent] Fetched {url}")
+            return content
+        else:
+            print(f"[Proposal Agent] Empty or failed: {url}")
+    return ""
 
 
-def fetch_first_repo_file(repo_name: str, file_paths: list[str]) -> tuple[str, str]:
-    for file_path in file_paths:
-        label, content = fetch_repo_file(repo_name, file_path)
-        if content.strip():
-            return label, content
-    return "", ""
-
+def fetch_file_tree(repo_name: str) -> list[str]:
+    for branch in ("main", "master"):
+        url = f"{GITHUB_API_BASE}/repos/{repo_name}/git/trees/{branch}?recursive=1"
+        content = fetch_url(url)
+        if content:
+            try:
+                data = json.loads(content)
+                files = [item["path"] for item in data.get("tree", []) if item["type"] == "blob"]
+                if files:
+                    print(f"[Proposal Agent] Fetched file tree from {url} ({len(files)} files)")
+                    return files
+            except Exception as e:
+                print(f"[Proposal Agent] Failed to parse file tree from {url}: {e}")
+        else:
+            print(f"[Proposal Agent] Empty or failed: {url}")
+    return []
 
 def read_text_or_path(value: str | Path) -> str:
     if isinstance(value, str) and len(value) > 500:
@@ -60,115 +89,96 @@ def read_text_or_path(value: str | Path) -> str:
         pass
     return str(value)
 
+def sanitize_setup(setup: dict) -> dict:
+    # Remove data_setup_commands that involve cloning or cd — experiment agent handles cloning
+    setup["data_setup_commands"] = [
+        cmd for cmd in setup.get("data_setup_commands", [])
+        if not any(skip in cmd for skip in ["git clone", "cd ", "pip install ."])
+    ]
 
-def sentence_summary(text: str, max_sentences: int = 2) -> str:
-    cleaned = " ".join(str(text).split())
-    if not cleaned:
-        return "No deep literature context was provided."
-    sentences = []
-    start = 0
-    for index, char in enumerate(cleaned):
-        if char in ".!?" and (index + 1 == len(cleaned) or cleaned[index + 1].isspace()):
-            sentence = cleaned[start : index + 1].strip()
-            if sentence:
-                sentences.append(sentence)
-            start = index + 1
-        if len(sentences) >= max_sentences:
-            break
-    if sentences:
-        return " ".join(sentences[:max_sentences])
-    return cleaned
+    # Fix run_script — remove any os.chdir() and path manipulation assuming a subdirectory
+    # The script runs from CLONE_DIR directly, so no subdirectory navigation needed
+    script = setup.get("run_script", "")
+    fixed_lines = []
+    for line in script.split("\n"):
+        if "os.chdir" in line:
+            continue
+        if "nab_dir" in line and ("os.path.join" in line or "sys.path" in line):
+            continue
+        if "sys.path.insert" in line:
+            continue
+        line = line.replace("nab_dir", "os.getcwd()")
+        line = line.replace("'NAB/", "'")
+        line = line.replace('"NAB/', '"')
+        fixed_lines.append(line)
+    setup["run_script"] = "\n".join(fixed_lines)
+
+    # Remove earthgeckoSkyline — too slow
+    setup["run_script"] = setup["run_script"].replace(
+        "from nab.detectors.earthgecko_skyline.earthgecko_skyline_detector import EarthgeckoSkylineDetector\n", ""
+    ).replace(
+        "    'earthgeckoSkyline': EarthgeckoSkylineDetector,\n", ""
+    )
+
+    # Remove Cython from install_commands — incompatible with Python 3.13
+    setup["install_commands"] = [
+        pkg for pkg in setup.get("install_commands", [])
+        if pkg.lower() not in {"cython"}
+    ]
+
+    return setup
 
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
-    print("\n[Proposal Agent] Building proposal from selected repo metadata...")
+    print("\n[Proposal Agent] Starting proposal generation...")
     anchor = get_experiment_anchor()
     repo_id = anchor.get("repo_id", "")
     repo_url = anchor["repo_url"]
     hypothesis = anchor["hypothesis"]
 
-    deep_lit = sentence_summary(read_text_or_path(deep_literature_review), max_sentences=2)
-    selected_repo = get_repo_by_id(repo_id) or select_repo_for_prompt(
-        "\n".join([research_question, deep_lit, repo_url, hypothesis])
-    )
-    datasets = selected_repo.get("datasets", [])
-    primary_dataset = datasets[0] if datasets else {}
-    dependencies = selected_repo.get("dependencies", [])
-    entrypoints = selected_repo.get("entrypoints", [])
-    metrics = selected_repo.get("metrics", [])
-    tasks = selected_repo.get("tasks", [])
+    selected_repo = get_repo_by_id(repo_id) or select_repo_for_prompt(research_question)
+    repo_name = selected_repo["name"]
 
-    requirements_label, requirements = fetch_first_repo_file(
-        selected_repo["name"],
-        selected_repo.get("requirements_files", []),
-    )
-    source_label, source_excerpt = fetch_first_repo_file(
-        selected_repo["name"],
-        selected_repo.get("source_files", []),
-    )
-    if requirements:
-        requirements_block = f"Source file: {requirements_label}\n\n{requirements}"
-    else:
-        requirements_block = "No repo-specific requirement/config file was fetched for this metadata entry."
+    print(f"[Proposal Agent] Fetching README and file tree for {repo_name}...")
+    readme = fetch_raw_file(repo_name, "README.md") or fetch_raw_file(repo_name, "README.rst")
+    file_tree = fetch_file_tree(repo_name)
+    file_tree_str = "\n".join(file_tree[:200])
 
-    if source_excerpt:
-        source_block = f"Source file: {source_label}\n\n{source_excerpt[:3000]}"
-    else:
-        source_block = "No repo-specific source/example excerpt was fetched for this metadata entry."
+    print("[Proposal Agent] Asking agent to reason about repo setup and execution...")
+    raw_response = call_agent_api(
+        PROPOSAL_SYSTEM_PROMPT +
+        f"\nResearch question: {research_question}\n\n"
+        f"Repository: {repo_url}\n\n"
+        f"README:\n{readme[:4000]}\n\n"
+        f"File tree:\n{file_tree_str}",
+        label="ProposalReasoning",
+    ).strip()
+
+    # Parse and validate the JSON
+    try:
+        clean = raw_response.replace("```json", "").replace("```", "").strip()
+        setup = sanitize_setup(json.loads(clean))
+    except Exception as e:
+        print(f"[Proposal Agent] Warning: could not parse JSON response: {e}")
+        print(f"[Proposal Agent] Raw response was: {raw_response[:500]}")
+        setup = {
+            "install_commands": [],
+            "run_script": "",
+            "data_setup_commands": [],
+            "expected_metric": "benchmark performance",
+            "notes": "Could not parse setup instructions.",
+        }
 
     proposal = f"""PROPOSAL SUMMARY
 Research question: {research_question}
 Repo: {repo_url}
 Hypothesis: {hypothesis}
 
-LOCAL REPO LIBRARY MATCH:
-{format_repo_metadata(selected_repo)}
+EXPERIMENT SETUP JSON:
+{json.dumps(setup, indent=2)}
 
-EXPERIMENT OVERVIEW:
-This proposal outlines a benchmark-oriented replication study using {selected_repo['name']}.
-The goal is to run or adapt the repository's documented workflow for the selected prompt,
-use its public dataset resources, and evaluate the result with the repository's benchmark metrics.
-
-REPOSITORY:
-- URL: {repo_url}
-- Expected entrypoints: {', '.join(entrypoints) if entrypoints else 'Inspect repository examples and scripts'}
-- Dependencies: {', '.join(dependencies) if dependencies else 'Inspect repository requirements'}
-
-BENCHMARK TASKS:
-{json.dumps(tasks, indent=2)}
-
-DATASET:
-{json.dumps(primary_dataset, indent=2)}
-
-METRICS:
-{json.dumps(metrics, indent=2)}
-
-REPLICATION STEPS:
-1. Clone the repository:
-   git clone {repo_url}
-2. Create or reuse an isolated virtual environment.
-3. Install only the dependencies required by the selected benchmark.
-4. Run the documented entrypoint or example script.
-5. Capture benchmark metrics, runtime, and any failure logs.
-
-SUCCESS CRITERIA:
-- The benchmark runs without errors on the selected public dataset.
-- The output includes at least one primary metric: {metrics[0] if metrics else 'benchmark performance'}.
-- Results are logged and captured for the paper.
-
-EXPECTED OUTPUT:
-- Selected repo and dataset provenance
-- Benchmark metric values
-- Runtime and reproducibility notes
-
-REQUIREMENTS FILE CONTENTS:
-{requirements_block}
-
-SOURCE OR EXAMPLE EXCERPT (first 3000 chars):
-{source_block}
-
-DEEP LITERATURE CONTEXT:
-{deep_lit}
+NOTES:
+{setup.get('notes', '')}
 """
 
     print("[Proposal Agent] Proposal generated successfully.")

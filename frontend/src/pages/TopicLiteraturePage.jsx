@@ -93,17 +93,21 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
       <p>Enter your research topic. We'll search academic databases and identify research gaps automatically.</p>
 
       <div className="input-row">
-        <input
+        <select
           className="topic-input"
-          type="text"
-          placeholder="e.g. transformer efficiency in NLP"
           value={localTopic}
           onChange={(e) => {
             setLocalTopic(e.target.value);
             onTopicSet(e.target.value);
           }}
           disabled={running}
-        />
+        >
+          <option value="">Select a research topic...</option>
+          <option value="Convolutional neural networks for image classification on MNIST">CNN image classification on MNIST</option>
+          <option value="Anomaly detection in streaming time series data">Anomaly detection in time series</option>
+          <option value="Tabular machine learning classification and regression benchmarks">Tabular ML benchmarks</option>
+          <option value="Collaborative filtering and implicit feedback recommender systems">Recommender systems</option>
+        </select>
         <button
           className="run-button"
           onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
