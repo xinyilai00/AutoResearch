@@ -120,9 +120,9 @@ function Layout({ children, onDownloadClick }) {
 
 function App() {
   const [autonomous, setAutonomous] = useState(false);
-  const [repoUrl, setRepoUrl] = useState("https://github.com/pytorch/examples/tree/main/mnist");
+  const [repoUrl, setRepoUrl] = useState("https://github.com/ncorpron/MNIST_CNN_with_PyTorch");  
   const [hypothesis, setHypothesis] = useState(
-    "A standard two-layer CNN trained on MNIST with dropout regularization and the Adadelta optimizer can achieve ≥99% test accuracy within 14 epochs, replicating the results reported in pytorch/examples."
+  "A convolutional neural network trained from scratch with PyTorch can achieve high classification accuracy on the MNIST handwritten digit benchmark."
   );
   const [topic, setTopic] = useState("Convolutional Neural Networks for handwritten digit classification on MNIST");  const [litOutput, setLitOutput] = useState("");
   const [questions, setQuestions] = useState([]);

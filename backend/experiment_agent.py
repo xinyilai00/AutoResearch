@@ -52,15 +52,17 @@ def run_command(command: list[str], cwd: Path, timeout: int = 1800) -> tuple[int
 
 def parse_training_output(stdout: str) -> dict:
     epochs = []
+    # Format: "Epoch 1: loss=0.1234, acc=0.9123, val_acc=0.9456"
     test_pattern = re.compile(
-        r"Test set: Average loss: ([\d.]+), Accuracy: (\d+)/(\d+) \(([\d.]+)%\)"
+        r"Epoch (\d+): loss=([\d.]+), acc=([\d.]+), val_acc=([\d.]+)"
     )
     for match in test_pattern.finditer(stdout):
         epochs.append({
-            "loss": float(match.group(1)),
-            "correct": int(match.group(2)),
-            "total": int(match.group(3)),
-            "accuracy_pct": float(match.group(4)),
+            "epoch": int(match.group(1)),
+            "loss": float(match.group(2)),
+            "train_acc": float(match.group(3)),
+            "val_acc": float(match.group(4)),
+            "accuracy_pct": float(match.group(4)) * 100,
         })
 
     final_accuracy = epochs[-1]["accuracy_pct"] if epochs else None
@@ -94,14 +96,14 @@ def run_experiment_stage(
     print("[Experiment Agent] Cloning pytorch/examples...")
     CLONE_DIR.parent.mkdir(parents=True, exist_ok=True)
     returncode, stdout, stderr = run_command(
-        ["git", "clone", "--depth", "1", "https://github.com/pytorch/examples.git", str(CLONE_DIR)],
+        ["git", "clone", "--depth", "1", "https://github.com/ncorpron/MNIST_CNN_with_PyTorch.git", str(CLONE_DIR)],
         cwd=Path("."),
         timeout=600,
     )
     if returncode != 0:
         return "# Experiment Failed\n\nFailed to clone repository.\n\nError: " + stderr
 
-    mnist_dir = CLONE_DIR / "mnist"
+    mnist_dir = CLONE_DIR
     if not mnist_dir.exists():
         return "# Experiment Failed\n\nCould not find mnist/ directory in cloned repo."
 
@@ -129,7 +131,7 @@ def run_experiment_stage(
     print("[Experiment Agent] Running training - this may take 15-20 minutes on CPU...")
     start_time = time.time()
     returncode, stdout, stderr = run_command(
-        [str(venv_python), "main.py"],
+        [str(venv_python), "train.py"],
         cwd=mnist_dir,
         timeout=1800,
     )
@@ -146,7 +148,7 @@ def run_experiment_stage(
 
     epoch_table = ""
     for i, epoch in enumerate(results["per_epoch_results"], 1):
-        epoch_table += "| " + str(i) + " | " + str(round(epoch["loss"], 4)) + " | " + str(epoch["correct"]) + "/" + str(epoch["total"]) + " | " + str(epoch["accuracy_pct"]) + "% |\n"
+        epoch_table += "| " + str(epoch["epoch"]) + " | " + str(round(epoch["loss"], 4)) + " | " + str(round(epoch["train_acc"], 4)) + " | " + str(round(epoch["val_acc"], 4)) + " |\n"
 
     if results["success"]:
         success_str = "SUCCESS - >=99% accuracy achieved"
@@ -170,16 +172,16 @@ def run_experiment_stage(
         "- Training Time: " + elapsed_str + "\n"
         "- Epochs Completed: " + epochs_captured + "\n\n"
         "## Per-Epoch Results\n"
-        "| Epoch | Test Loss | Correct | Accuracy |\n"
-        "|-------|-----------|---------|----------|\n"
+        "| Epoch | Loss | Train Acc | Val Acc |\n"
+        "|-------|------|-----------|----------|\n"
         + epoch_table + "\n"
         "## Experiment Configuration\n"
         "- Repo: " + repo_url + "\n"
         "- Hypothesis: " + hypothesis + "\n"
-        "- Architecture: Two-layer CNN (Conv1: 1->32, Conv2: 32->64), Dropout(0.25, 0.50), FC(9216->128->10)\n"
-        "- Optimizer: Adadelta (lr=1.0, gamma=0.7)\n"
-        "- Batch Size: 64\n"
-        "- Epochs: 14\n\n"
+        "- Architecture: SimpleCNN (see models.py)\n"
+        "- Optimizer: Adam (lr=1e-3)\n"
+        "- Batch Size: 128\n"
+        "- Epochs: 10\n\n"
         "## Raw Training Log\n"
         + raw_log + "\n"
     )
