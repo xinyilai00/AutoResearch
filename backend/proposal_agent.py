@@ -40,6 +40,25 @@ def read_text_or_path(value: str | Path) -> str:
     return str(value)
 
 
+def sentence_summary(text: str, max_sentences: int = 2) -> str:
+    cleaned = " ".join(str(text).split())
+    if not cleaned:
+        return "No deep literature context was provided."
+    sentences = []
+    start = 0
+    for index, char in enumerate(cleaned):
+        if char in ".!?" and (index + 1 == len(cleaned) or cleaned[index + 1].isspace()):
+            sentence = cleaned[start : index + 1].strip()
+            if sentence:
+                sentences.append(sentence)
+            start = index + 1
+        if len(sentences) >= max_sentences:
+            break
+    if sentences:
+        return " ".join(sentences[:max_sentences])
+    return cleaned
+
+
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Fetching pytorch/examples/mnist repo...")
     anchor = get_experiment_anchor()
@@ -50,7 +69,7 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
     main_py = fetch_url(PYTORCH_MNIST_MAIN_PY)
     requirements = fetch_url(PYTORCH_MNIST_REQUIREMENTS)
 
-    deep_lit = read_text_or_path(deep_literature_review)
+    deep_lit = sentence_summary(read_text_or_path(deep_literature_review), max_sentences=2)
 
     # Parse key hyperparameters from main.py
     hyperparameters = {
@@ -134,7 +153,7 @@ MAIN.PY EXCERPT (first 3000 chars):
 {main_py[:3000] if main_py else "Could not fetch main.py"}
 
 DEEP LITERATURE CONTEXT:
-{deep_lit[:1000]}
+{deep_lit}
 """
 
     print("[Proposal Agent] Proposal generated successfully.")

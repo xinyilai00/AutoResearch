@@ -8,8 +8,11 @@ from typing import Any
 # ── Experiment Anchor ──────────────────────────────────────────────────────────
 # Hardcoded for MVP. When we generalize, these get set dynamically per request.
 
-_EXPERIMENT_REPO_URL: str = ""
-_EXPERIMENT_HYPOTHESIS: str = ""
+_EXPERIMENT_REPO_URL: str = "https://github.com/ncorpron/MNIST_CNN_with_PyTorch"
+_EXPERIMENT_HYPOTHESIS: str = (
+    "A convolutional neural network trained from scratch with PyTorch can achieve high "
+    "classification accuracy on the MNIST handwritten digit benchmark."
+)
 
 
 def set_experiment_anchor(repo_url: str, hypothesis: str) -> None:

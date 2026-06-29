@@ -16,7 +16,7 @@ except ImportError:
 
 
 CLONE_DIR = Path("paper_runs/latest/experiment/repo")
-VENV_DIR = Path("paper_runs/latest/experiment/venv")
+VENV_DIR = Path("paper_runs/latest/experiment/venv").resolve()
 
 
 def read_text_or_path(value: str | Path) -> str:
