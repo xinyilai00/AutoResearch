@@ -93,7 +93,7 @@ def run_experiment_stage(
         print("[Experiment Agent] Removing previous venv...")
         shutil.rmtree(VENV_DIR)
 
-    print("[Experiment Agent] Cloning pytorch/examples...")
+    print("[Experiment Agent] Cloning ncorpron/MNIST_CNN_with_PyTorch...")    
     CLONE_DIR.parent.mkdir(parents=True, exist_ok=True)
     returncode, stdout, stderr = run_command(
         ["git", "clone", "--depth", "1", "https://github.com/ncorpron/MNIST_CNN_with_PyTorch.git", str(CLONE_DIR)],

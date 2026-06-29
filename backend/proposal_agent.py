@@ -59,7 +59,7 @@ def sentence_summary(text: str, max_sentences: int = 2) -> str:
 
 
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
-    print("\n[Proposal Agent] Fetching pytorch/examples/mnist repo...")
+    print("\n[Proposal Agent] Fetching ncorpron/MNIST_CNN_with_PyTorch repo...")    
     anchor = get_experiment_anchor()
     repo_url = anchor["repo_url"]
     hypothesis = anchor["hypothesis"]
