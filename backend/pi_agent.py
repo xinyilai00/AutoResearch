@@ -69,11 +69,12 @@ def get_response(request_id):
 def run_pi_agent(user_topic):
     anchor = get_experiment_anchor()
     anchor_context = f"""
-EXPERIMENT CONTEXT:
-- GitHub Repo being replicated: {anchor['repo_url']}
+SELECTED BENCHMARK CONTEXT:
+- Repository: {anchor.get('repo_name', 'selected repository')}
+- Repository URL: {anchor['repo_url']}
 - Hypothesis: {anchor['hypothesis']}
 
-You are generating search queries specifically to support a replication study of the above experiment. Keep all queries scoped to this context.
+You are generating search queries to support a benchmark-oriented study.
 """
 
     headers = {

@@ -352,11 +352,12 @@ def get_response(request_id: str) -> str:
 def run_literature_agent(papers_text: str, topic: str) -> str:
     anchor = get_experiment_anchor()
     anchor_context = f"""
-EXPERIMENT CONTEXT:
-- GitHub Repo being replicated: {anchor['repo_url']}
+SELECTED BENCHMARK CONTEXT:
+- Repository: {anchor.get('repo_name', 'selected repository')}
+- Repository URL: {anchor['repo_url']}
 - Hypothesis: {anchor['hypothesis']}
 
-You are conducting a literature review specifically to support a replication study of the above experiment. Focus your gap analysis on topics directly relevant to this replication: CNN architectures, MNIST benchmarks, dropout regularization, and the Adadelta optimizer.
+You are conducting a literature review to support a benchmark-oriented study using the selected repository. Focus the synthesis and gap analysis on literature directly relevant to the repository's domain, public dataset resources, benchmark workflow, methods, and measurable evaluation metrics. Do not assume the study is about MNIST, CNNs, or PyTorch unless the selected repository context explicitly implies that.
 """
     headers = {
         "Content-Type": "application/json",
