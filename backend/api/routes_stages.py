@@ -191,6 +191,9 @@ def run_paper_stage(request: StageRunRequest, state: PipelineState) -> Path:
     final_path = output_dir / "final.md"
     state.set_stage_status("paper", "generated")
 
+    if final_path.exists():
+        state.write_stage_output("paper", final_path.read_text(encoding="utf-8"))
+
     return final_path
 
 
