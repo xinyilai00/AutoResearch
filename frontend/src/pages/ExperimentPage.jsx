@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
 
-export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete, repoUrl, hypothesis }) {
+export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete }) {
   const navigate = useNavigate();
   const [output, setOutput] = useState(experimentOutput || "");
   const [running, setRunning] = useState(false);
@@ -43,9 +43,7 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           proposal: proposalOutput,
-          feedback: feedback || undefined,
-          repo_url: repoUrl,
-          hypothesis: hypothesis,
+          feedback: feedback || undefined
         }),
         signal: abortControllerRef.current.signal,
       });
