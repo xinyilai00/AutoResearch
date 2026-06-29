@@ -110,11 +110,8 @@ function Layout({ children, onDownloadClick }) {
 
 function App() {
   const [autonomous, setAutonomous] = useState(false);
-  const [repoUrl, setRepoUrl] = useState("https://github.com/ncorpron/MNIST_CNN_with_PyTorch");  
-  const [hypothesis, setHypothesis] = useState(
-  "A convolutional neural network trained from scratch with PyTorch can achieve high classification accuracy on the MNIST handwritten digit benchmark."
-  );
-  const [topic, setTopic] = useState("Convolutional Neural Networks for handwritten digit classification on MNIST");  const [litOutput, setLitOutput] = useState("");
+  const [topic, setTopic] = useState("");
+  const [litOutput, setLitOutput] = useState("");
   const [questions, setQuestions] = useState([]);
   const [selectedQuestion, setSelectedQuestion] = useState("");
   const [deepLitOutput, setDeepLitOutput] = useState("");
@@ -171,8 +168,6 @@ function App() {
       onTopicSet={setTopic}
       litOutput={litOutput}
       onComplete={completeLitOutput}
-      repoUrl={repoUrl}
-      hypothesis={hypothesis}
     />}
   />
   <Route path="/research-question" element={
@@ -184,8 +179,6 @@ function App() {
       onQuestionsGenerated={setQuestions}
       selectedQuestion={selectedQuestion}
       onComplete={completeSelectedQuestion}
-      repoUrl={repoUrl}
-      hypothesis={hypothesis}
     />}
   />
   <Route path="/deep-literature" element={
@@ -194,8 +187,6 @@ function App() {
       selectedQuestion={selectedQuestion}
       deepLitOutput={deepLitOutput}
       onComplete={completeDeepLitOutput}
-      repoUrl={repoUrl}
-      hypothesis={hypothesis}
     />}
   />
   <Route path="/proposal" element={
@@ -204,8 +195,6 @@ function App() {
       deepLitOutput={deepLitOutput}
       proposalOutput={proposalOutput}
       onComplete={completeProposalOutput}
-      repoUrl={repoUrl}
-      hypothesis={hypothesis}
     />}
   />
   <Route path="/experiment" element={
@@ -214,8 +203,6 @@ function App() {
       proposalOutput={proposalOutput}
       experimentOutput={experimentOutput}
       onComplete={completeExperimentOutput}
-      repoUrl={repoUrl}
-      hypothesis={hypothesis}
     />}
   />
   <Route path="/paper" element={
@@ -224,8 +211,6 @@ function App() {
       experimentOutput={experimentOutput}
       paperOutput={paperOutput}
       onComplete={setPaperOutput}
-      repoUrl={repoUrl}
-      hypothesis={hypothesis}
     />}
   />
 </Routes>

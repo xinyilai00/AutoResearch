@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
-export default function ResearchQuestionPage({ autonomous, topic, litOutput, questions, onQuestionsGenerated, selectedQuestion, onComplete, repoUrl, hypothesis }) {
+export default function ResearchQuestionPage({ autonomous, topic, litOutput, questions, onQuestionsGenerated, selectedQuestion, onComplete }) {
   const navigate = useNavigate();
   const [question, setQuestion] = useState(selectedQuestion || "");
   const [loading, setLoading] = useState(false);
