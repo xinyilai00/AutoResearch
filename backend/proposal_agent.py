@@ -12,8 +12,7 @@ except ImportError:
     from repo_library import format_repo_metadata, get_repo_by_id, select_repo_for_prompt
 
 
-PYTORCH_MNIST_MAIN_PY = "https://raw.githubusercontent.com/ncorpron/MNIST_CNN_with_PyTorch/main/train.py"
-PYTORCH_MNIST_REQUIREMENTS = "https://raw.githubusercontent.com/ncorpron/MNIST_CNN_with_PyTorch/main/requirements.txt"
+RAW_GITHUB_BASE = "https://raw.githubusercontent.com"
 
 
 def fetch_url(url: str) -> str:
@@ -27,6 +26,27 @@ def fetch_url(url: str) -> str:
     except Exception as e:
         print(f"[Proposal Agent] Failed to fetch {url}: {e}")
         return ""
+
+
+def github_raw_url(repo_name: str, branch: str, file_path: str) -> str:
+    return f"{RAW_GITHUB_BASE}/{repo_name}/{branch}/{file_path}"
+
+
+def fetch_repo_file(repo_name: str, file_path: str) -> tuple[str, str]:
+    for branch in ("main", "master"):
+        url = github_raw_url(repo_name, branch, file_path)
+        content = fetch_url(url)
+        if content.strip():
+            return file_path, content
+    return file_path, ""
+
+
+def fetch_first_repo_file(repo_name: str, file_paths: list[str]) -> tuple[str, str]:
+    for file_path in file_paths:
+        label, content = fetch_repo_file(repo_name, file_path)
+        if content.strip():
+            return label, content
+    return "", ""
 
 
 def read_text_or_path(value: str | Path) -> str:
@@ -78,11 +98,23 @@ def run_proposal_stage(research_question: str, deep_literature_review: str | Pat
     metrics = selected_repo.get("metrics", [])
     tasks = selected_repo.get("tasks", [])
 
-    main_py = ""
-    requirements = ""
-    if selected_repo["id"] == "mnist_cnn_pytorch":
-        main_py = fetch_url(PYTORCH_MNIST_MAIN_PY)
-        requirements = fetch_url(PYTORCH_MNIST_REQUIREMENTS)
+    requirements_label, requirements = fetch_first_repo_file(
+        selected_repo["name"],
+        selected_repo.get("requirements_files", []),
+    )
+    source_label, source_excerpt = fetch_first_repo_file(
+        selected_repo["name"],
+        selected_repo.get("source_files", []),
+    )
+    if requirements:
+        requirements_block = f"Source file: {requirements_label}\n\n{requirements}"
+    else:
+        requirements_block = "No repo-specific requirement/config file was fetched for this metadata entry."
+
+    if source_excerpt:
+        source_block = f"Source file: {source_label}\n\n{source_excerpt[:3000]}"
+    else:
+        source_block = "No repo-specific source/example excerpt was fetched for this metadata entry."
 
     proposal = f"""PROPOSAL SUMMARY
 Research question: {research_question}
@@ -130,10 +162,10 @@ EXPECTED OUTPUT:
 - Runtime and reproducibility notes
 
 REQUIREMENTS FILE CONTENTS:
-{requirements if requirements else "No repo-specific requirements were fetched for this metadata entry."}
+{requirements_block}
 
-MAIN.PY EXCERPT (first 3000 chars):
-{main_py[:3000] if main_py else "No repo-specific source excerpt was fetched for this metadata entry."}
+SOURCE OR EXAMPLE EXCERPT (first 3000 chars):
+{source_block}
 
 DEEP LITERATURE CONTEXT:
 {deep_lit}
