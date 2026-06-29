@@ -8,10 +8,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from fastapi.responses import FileResponse
-import markdown
-import tempfile
-
 from backend.feedback import apply_stage_feedback, normalize_stage_name
 from backend.experiment_agent import run_experiment_stage
 from backend.lit_agent_p1 import run_literature_stage
