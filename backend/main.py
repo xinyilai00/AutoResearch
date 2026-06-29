@@ -105,7 +105,7 @@ def main():
     experiment_status = "redesign_needed" if "REDESIGN_NEEDED" in experiment_output else "generated"
     experiment_path = state.write_stage_output("experiment", experiment_output, status=experiment_status)
     print(experiment_output)
-    return
+    
     print("\n--- Paper Agent ---")
     paper_args = parse_paper_args(
         [
