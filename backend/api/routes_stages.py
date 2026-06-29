@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from pathlib import Path
 from typing import Optional
 
@@ -240,112 +242,60 @@ def get_stage_output(stage: str, run_dir: str = "paper_runs/latest") -> dict:
     }
 
 @router.get("/api/download/pdf")
-def download_pdf(run_dir: str = "paper_runs/latest") -> FileResponse:
-    from fpdf import FPDF
-    import markdown as md
-    import re
-    import tempfile
+def download_pdf(run_dir: str = "paper_runs/latest"):
+    import subprocess
+    from fastapi.responses import HTMLResponse
 
     final_path = Path(run_dir) / "final.md"
     if not final_path.exists():
         raise HTTPException(status_code=404, detail="No paper found. Please run the Paper stage first.")
 
-    markdown_text = final_path.read_text(encoding="utf-8")
-
-    # Strip markdown formatting for plain text PDF
-    def strip_markdown(text):
-        # Remove code blocks
-        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-        # Convert headers
-        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-        # Remove bold/italic
-        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-        text = re.sub(r'\*(.+?)\*', r'\1', text)
-        # Remove links
-        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
-        # Remove table formatting
-        text = re.sub(r'\|', ' ', text)
-        text = re.sub(r'^[-:]+$', '', text, flags=re.MULTILINE)
-        return text
-
-    class PDF(FPDF):
-        def header(self):
-            pass
-        def footer(self):
-            self.set_y(-15)
-            self.set_font('Helvetica', 'I', 8)
-            self.set_text_color(128)
-            self.cell(0, 10, f'Page {self.page_no()}', align='C')
-
-    pdf = PDF()
-    pdf.set_auto_page_break(auto=True, margin=25)
-    pdf.add_page()
-    pdf.set_margins(25, 25, 25)
-
-    lines = markdown_text.split('\n')
-    
-    for line in lines:
-        line = line.rstrip()
-        
-        # H1 - Title
-        if line.startswith('# ') and not line.startswith('## '):
-            pdf.set_font('Helvetica', 'B', 16)
-            pdf.set_text_color(0, 0, 0)
-            title = line[2:]
-            pdf.multi_cell(0, 10, title, align='C')
-            pdf.ln(6)
-        
-        # H2 - Section headers
-        elif line.startswith('## '):
-            pdf.ln(4)
-            pdf.set_font('Helvetica', 'B', 12)
-            pdf.set_text_color(0, 0, 0)
-            header = line[3:]
-            pdf.multi_cell(0, 8, header)
-            pdf.ln(2)
-        
-        # H3 - Subsection headers
-        elif line.startswith('### '):
-            pdf.ln(2)
-            pdf.set_font('Helvetica', 'BI', 11)
-            pdf.set_text_color(0, 0, 0)
-            header = line[4:]
-            pdf.multi_cell(0, 7, header)
-            pdf.ln(1)
-        
-        # Table rows - skip for now
-        elif line.startswith('|'):
-            pdf.set_font('Helvetica', '', 9)
-            pdf.set_text_color(60, 60, 60)
-            clean = re.sub(r'\|', '  ', line).strip()
-            clean = re.sub(r'\s+', ' ', clean)
-            if not re.match(r'^[-:\s]+$', clean):
-                pdf.multi_cell(0, 5, clean)
-        
-        # Empty line
-        elif line == '':
-            pdf.ln(3)
-        
-        # Regular paragraph text
-        else:
-            pdf.set_font('Helvetica', '', 10)
-            pdf.set_text_color(0, 0, 0)
-            # Strip inline markdown
-            clean = re.sub(r'\*\*(.+?)\*\*', r'\1', line)
-            clean = re.sub(r'\*(.+?)\*', r'\1', clean)
-            clean = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', clean)
-            clean = re.sub(r'`(.+?)`', r'\1', clean)
-            if clean.strip():
-                try:
-                    pdf.multi_cell(0, 6, clean, align='J')
-                except Exception:
-                    pdf.multi_cell(0, 6, clean.encode('latin-1', 'replace').decode('latin-1'), align='J')
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    pdf.output(tmp.name)
-
-    return FileResponse(
-        tmp.name,
-        media_type="application/pdf",
-        filename="research_paper.pdf"
+    result = subprocess.run(
+        [
+            "pandoc",
+            str(final_path),
+            "-t", "html5",
+            "--standalone",
+            "--metadata", "title=Research Paper",
+        ],
+        capture_output=True,
+        text=True,
+        env=os.environ,
     )
+
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"HTML generation failed: {result.stderr}")
+
+    html = result.stdout.replace("</head>", """
+<style>
+  body {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 20px 40px;
+    font-family: Georgia, serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #000;
+  }
+  h1 { font-size: 18pt; text-align: center; margin-bottom: 8px; }
+  h2 { font-size: 13pt; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 2em; }
+  h3 { font-size: 11pt; font-style: italic; }
+  p { text-align: justify; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 10pt; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; }
+  th { background: #f0f0f0; font-weight: bold; }
+  @media print {
+    body { margin: 0; padding: 2cm; max-width: 100%; }
+    h2 { page-break-after: avoid; }
+    h3 { page-break-after: avoid; }
+    table { page-break-inside: avoid; }
+  }
+</style>
+<script>
+  window.onload = function() {
+    window.print();
+  }
+</script>
+</head>""")
+
+    return HTMLResponse(content=html)
