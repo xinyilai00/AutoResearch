@@ -39,20 +39,10 @@ function DownloadModal({ onClose }) {
         </div>
         <p className="modal-subtitle">Choose a format to download your paper.</p>
         <div className="modal-options">
-          <button className="modal-option-btn">
+          <button className="modal-option-btn" onClick={() => window.open("http://localhost:8000/api/download/pdf", "_blank")}>
             <span className="modal-option-icon">📄</span>
             <span className="modal-option-label">PDF</span>
             <span className="modal-option-desc">Best for sharing and printing</span>
-          </button>
-          <button className="modal-option-btn">
-            <span className="modal-option-icon">📝</span>
-            <span className="modal-option-label">DOCX</span>
-            <span className="modal-option-desc">Editable in Microsoft Word</span>
-          </button>
-          <button className="modal-option-btn">
-            <span className="modal-option-icon">📐</span>
-            <span className="modal-option-label">LaTex</span>
-            <span className="modal-option-desc">For conference and journal submission</span>
           </button>
         </div>
       </div>
