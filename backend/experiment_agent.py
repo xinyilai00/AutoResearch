@@ -77,6 +77,43 @@ def parse_training_output(stdout: str) -> dict:
     }
 
 
+def dependency_imports(venv_python: Path, package: str) -> bool:
+    returncode, stdout, stderr = run_command(
+        [str(venv_python), "-c", f"import {package}"],
+        cwd=Path("."),
+        timeout=60,
+    )
+    return returncode == 0
+
+
+def ensure_required_dependencies(venv_python: Path, venv_pip: Path) -> tuple[bool, str]:
+    required_packages = ["torch", "torchvision"]
+    missing_packages = []
+
+    for package in required_packages:
+        if dependency_imports(venv_python, package):
+            print(f"[Experiment Agent] Dependency already installed: {package}")
+        else:
+            print(f"[Experiment Agent] Missing dependency: {package}")
+            missing_packages.append(package)
+
+    if not missing_packages:
+        print("[Experiment Agent] All required dependencies are already installed.")
+        return True, ""
+
+    for package in missing_packages:
+        print(f"[Experiment Agent] Installing missing dependency: {package}")
+        returncode, stdout, stderr = run_command(
+            [str(venv_pip), "install", package],
+            cwd=Path("."),
+            timeout=600,
+        )
+        if returncode != 0:
+            return False, stderr
+
+    return True, ""
+
+
 def run_experiment_stage(
     proposal_input: str | Path,
     output_dir: str | Path = "paper_runs/latest/experiment",
@@ -89,9 +126,6 @@ def run_experiment_stage(
     if CLONE_DIR.exists():
         print("[Experiment Agent] Removing previous clone...")
         shutil.rmtree(CLONE_DIR)
-    if VENV_DIR.exists():
-        print("[Experiment Agent] Removing previous venv...")
-        shutil.rmtree(VENV_DIR)
 
     print("[Experiment Agent] Cloning ncorpron/MNIST_CNN_with_PyTorch...")    
     CLONE_DIR.parent.mkdir(parents=True, exist_ok=True)
@@ -107,26 +141,24 @@ def run_experiment_stage(
     if not mnist_dir.exists():
         return "# Experiment Failed\n\nCould not find mnist/ directory in cloned repo."
 
-    print("[Experiment Agent] Creating virtual environment...")
-    returncode, stdout, stderr = run_command(
-        [sys.executable, "-m", "venv", str(VENV_DIR)],
-        cwd=Path("."),
-        timeout=60,
-    )
-    if returncode != 0:
-        return "# Experiment Failed\n\nFailed to create virtual environment.\n\nError: " + stderr
-
     venv_python = VENV_DIR / "bin" / "python"
     venv_pip = VENV_DIR / "bin" / "pip"
 
-    print("[Experiment Agent] Installing dependencies...")
-    returncode, stdout, stderr = run_command(
-        [str(venv_pip), "install", "-r", "requirements.txt"],
-        cwd=mnist_dir,
-        timeout=600,
-    )
-    if returncode != 0:
-        return "# Experiment Failed\n\nFailed to install dependencies.\n\nError: " + stderr
+    if venv_python.exists() and venv_pip.exists():
+        print("[Experiment Agent] Reusing existing virtual environment.")
+    else:
+        print("[Experiment Agent] Creating virtual environment...")
+        returncode, stdout, stderr = run_command(
+            [sys.executable, "-m", "venv", str(VENV_DIR)],
+            cwd=Path("."),
+            timeout=60,
+        )
+        if returncode != 0:
+            return "# Experiment Failed\n\nFailed to create virtual environment.\n\nError: " + stderr
+
+    dependencies_ok, dependency_error = ensure_required_dependencies(venv_python, venv_pip)
+    if not dependencies_ok:
+        return "# Experiment Failed\n\nFailed to install dependencies.\n\nError: " + dependency_error
 
     print("[Experiment Agent] Running training - this may take 15-20 minutes on CPU...")
     start_time = time.time()
