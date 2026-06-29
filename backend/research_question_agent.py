@@ -19,19 +19,20 @@ except ImportError:
 
 
 RESEARCH_QUESTION_SYSTEM_PROMPT = """
-You are the Research Question Agent in an autonomous research pipeline focused on replicating a specific ML experiment.
+You are the Research Question Agent in an autonomous research pipeline focused on benchmark-oriented research using a selected GitHub repository.
 
 You will be given:
-- The experiment context (repo being replicated and hypothesis)
+- The selected repository context, including benchmark intent and generated hypothesis
 - The literature review and gaps
 
-Your job is to output EXACTLY ONE research question that directly frames the replication study.
+Your job is to output EXACTLY ONE research question that directly frames a runnable benchmark study using the selected repository, dataset resources, and evaluation metrics.
 
 Rules:
 - Output exactly one question — no more, no less
 - The question must be one clear, concise sentence
-- The question must be directly tied to the experiment being replicated
-- The question must be empirically answerable by running the experiment
+- The question must be directly tied to the selected repository and its benchmark workflow
+- The question must be empirically answerable by running or adapting the selected repository workflow
+- The question must point toward measurable datasets, methods, or benchmark metrics
 - No jargon, no sub-clauses, no methodology embedded in the question
 - Return plain text only
 - Do not add any text before RESEARCH QUESTION or after the question itself
@@ -108,11 +109,12 @@ def parse_research_question(output: str) -> str:
 def run_research_question_agent(topic: str, literature_output: str) -> str:
     anchor = get_experiment_anchor()
     anchor_context = f"""
-EXPERIMENT CONTEXT:
-- GitHub Repo being replicated: {anchor['repo_url']}
+SELECTED BENCHMARK CONTEXT:
+- Repository: {anchor.get('repo_name', 'selected repository')}
+- Repository URL: {anchor['repo_url']}
 - Hypothesis: {anchor['hypothesis']}
 
-Generate a research question that directly frames the replication of this specific experiment.
+Generate a research question that directly frames a benchmark-oriented study using this selected repository. Keep the question aligned with the repository's likely datasets, workflows, and measurable benchmark metrics.
 """
 
     headers = {
