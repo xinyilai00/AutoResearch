@@ -2,11 +2,11 @@ from __future__ import annotations
 
 
 try:
-   from .agent_api import call_agent_api
-   from .config import PAPER_INTRO_PRINCIPAL_ID
+    from .agent_api import call_agent_api
+    from .config import PAPER_INTRO_PRINCIPAL_ID, JSON_AGENT_ID
 except ImportError:
-   from agent_api import call_agent_api
-   from config import PAPER_INTRO_PRINCIPAL_ID
+    from agent_api import call_agent_api
+    from config import PAPER_INTRO_PRINCIPAL_ID, JSON_AGENT_ID
 
 
 
@@ -167,10 +167,10 @@ Sections to assemble:
        "the complete assembled", "all seven sections",
    )
    try:
-       result = call_agent_api(prompt, "Finalization", PAPER_INTRO_PRINCIPAL_ID)
+       result = call_agent_api(prompt, "Finalization", PAPER_INTRO_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
        if result.strip().lower().startswith(meta_starts):
            print("[Finalization Agent] Meta-response detected, retrying...")
-           result = call_agent_api(prompt, "Finalization retry", PAPER_INTRO_PRINCIPAL_ID)
+           result = call_agent_api(prompt, "Finalization retry", PAPER_INTRO_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
        if result.strip().lower().startswith(meta_starts):
            print("[Finalization Agent] Meta-response on retry, using fallback.")
            return fallback_finalization(intro, litreview, methodology, results, conclusion, "Meta-response detected twice.")

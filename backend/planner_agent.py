@@ -4,10 +4,10 @@ from pathlib import Path
 
 try:
     from .agent_api import call_agent_api
-    from .config import PAPER_PLANNER_PRINCIPAL_ID
+    from .config import PAPER_PLANNER_PRINCIPAL_ID, JSON_AGENT_ID
 except ImportError:
     from agent_api import call_agent_api
-    from config import PAPER_PLANNER_PRINCIPAL_ID
+    from config import PAPER_PLANNER_PRINCIPAL_ID, JSON_AGENT_ID
 
 
 PLANNER_PROMPT = """
@@ -173,10 +173,10 @@ Experiment output:
         "i'll carefully", "i'll compile",
     )
     try:
-        raw = call_agent_api(prompt, "Planner", PAPER_PLANNER_PRINCIPAL_ID)
+        raw = call_agent_api(prompt, "Planner", PAPER_PLANNER_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         if raw.strip().lower().startswith(meta_starts):
             print("[Planner Agent] Meta-response detected, retrying...")
-            raw = call_agent_api(prompt, "Planner retry", PAPER_PLANNER_PRINCIPAL_ID)
+            raw = call_agent_api(prompt, "Planner retry", PAPER_PLANNER_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         if raw.strip().lower().startswith(meta_starts):
             print("[Planner Agent] Meta-response on retry, using fallback.")
             return fallback_planner(topic, "Meta-response detected twice.")

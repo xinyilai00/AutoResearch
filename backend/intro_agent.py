@@ -4,10 +4,10 @@ from pathlib import Path
 
 try:
     from .agent_api import call_agent_api
-    from .config import PAPER_INTRO_PRINCIPAL_ID
+    from .config import PAPER_INTRO_PRINCIPAL_ID, JSON_AGENT_ID
 except ImportError:
     from agent_api import call_agent_api
-    from config import PAPER_INTRO_PRINCIPAL_ID
+    from config import PAPER_INTRO_PRINCIPAL_ID, JSON_AGENT_ID
 
 
 INTRO_PROMPT = """
@@ -57,10 +57,10 @@ Planner brief:
 {planner_brief}
 """
     try:
-        result = call_agent_api(prompt, "Intro", PAPER_INTRO_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Intro", PAPER_INTRO_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
             print("[Intro Agent] Meta-response detected, retrying...")
-            result = call_agent_api(prompt, "Intro retry", PAPER_INTRO_PRINCIPAL_ID)
+            result = call_agent_api(prompt, "Intro retry", PAPER_INTRO_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         return result
     except Exception as exc:
         print(f"Intro agent failed; using fallback. Reason: {exc}")

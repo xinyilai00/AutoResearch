@@ -2,10 +2,10 @@ from __future__ import annotations
 
 try:
     from .agent_api import call_agent_api
-    from .config import PAPER_LITREVIEW_PRINCIPAL_ID
+    from .config import PAPER_LITREVIEW_PRINCIPAL_ID, JSON_AGENT_ID
 except ImportError:
     from agent_api import call_agent_api
-    from config import PAPER_LITREVIEW_PRINCIPAL_ID
+    from config import PAPER_LITREVIEW_PRINCIPAL_ID, JSON_AGENT_ID
 
 
 LITREVIEW_PROMPT = """
@@ -70,10 +70,10 @@ Planner brief:
 {planner_brief}
 """
     try:
-        result = call_agent_api(prompt, "Lit Review", PAPER_LITREVIEW_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Lit Review", PAPER_LITREVIEW_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         if result.strip().lower().startswith(META_STARTS):
             print("[Lit Review Agent] Meta-response detected, retrying...")
-            result = call_agent_api(prompt, "Lit Review retry", PAPER_LITREVIEW_PRINCIPAL_ID)
+            result = call_agent_api(prompt, "Lit Review retry", PAPER_LITREVIEW_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         if result.strip().lower().startswith(META_STARTS):
             print("[Lit Review Agent] Meta-response on retry, using fallback.")
             return fallback_litreview("Meta-response detected twice.")

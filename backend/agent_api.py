@@ -6,18 +6,43 @@ import time
 import requests
 
 try:
-    from .config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+    from .config import AGENT_ID, API_KEY, BASE_URL, JSON_AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 except ImportError:
-    from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+    from config import AGENT_ID, API_KEY, BASE_URL, JSON_AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 
 
-def call_agent_api(user_input: str, label: str, principal_id: str | None = None) -> str:
+import json as _json
+
+def call_agent_api_json(user_input: str, label: str, max_retries: int = 2) -> dict:
+    prompt = user_input
+    for attempt in range(max_retries + 1):
+        response = call_agent_api(prompt, label=label, agent_id=JSON_AGENT_ID).strip()
+        clean = response.replace("```json", "").replace("```", "").strip()
+        try:
+            return _json.loads(clean)
+        except Exception:
+            if attempt < max_retries:
+                print(f"[{label}] Response was not valid JSON, retrying with correction...")
+                prompt = (
+                    user_input
+                    + "\n\nYOUR PREVIOUS RESPONSE WAS INVALID. You wrote explanatory text instead of JSON. "
+                    + "Your ENTIRE response must be a single valid JSON object. "
+                    + "It must start with { and end with }. Nothing before, nothing after. Try again."
+                )
+            else:
+                print(f"[{label}] Failed to get valid JSON after {max_retries + 1} attempts.")
+                print(f"[{label}] Last raw response was: {response[:1000]}")
+                return {}
+    return {}
+
+def call_agent_api(user_input: str, label: str, principal_id: str | None = None, agent_id: int | None = None) -> str:
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {API_KEY}",
         "X-Principal-Id": principal_id or PRINCIPAL_ID,
     }
-    body = {"agentId": AGENT_ID, "userInput": user_input}
+    body = {"agentId": agent_id or AGENT_ID, "userInput": user_input}
+    print(f"[DEBUG] Using agentId: {body['agentId']}")
     if SEND_MODEL_TO_AGENT_API and MODEL:
         body["model"] = MODEL
 

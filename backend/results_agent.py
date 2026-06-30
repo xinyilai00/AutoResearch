@@ -2,10 +2,10 @@ from __future__ import annotations
 
 try:
     from .agent_api import call_agent_api
-    from .config import PAPER_RESULTS_PRINCIPAL_ID
+    from .config import PAPER_RESULTS_PRINCIPAL_ID, JSON_AGENT_ID
 except ImportError:
     from agent_api import call_agent_api
-    from config import PAPER_RESULTS_PRINCIPAL_ID
+    from config import PAPER_RESULTS_PRINCIPAL_ID, JSON_AGENT_ID
 
 
 RESULTS_PROMPT = """
@@ -55,11 +55,19 @@ def run_results_agent(planner_brief: str) -> str:
 Planner brief:
 {planner_brief}
 """
+    meta_starts = (
+        "i'll", "i will", "here is", "let me", "i've completed",
+        "i have completed", "the document presents", "i've written",
+        "i have written", "i've prepared", "i have prepared",
+    )
     try:
-        result = call_agent_api(prompt, "Results", PAPER_RESULTS_PRINCIPAL_ID)
-        if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
+        result = call_agent_api(prompt, "Results", PAPER_RESULTS_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
+        if result.strip().lower().startswith(meta_starts):
             print("[Results Agent] Meta-response detected, retrying...")
-            result = call_agent_api(prompt, "Results retry", PAPER_RESULTS_PRINCIPAL_ID)
+            result = call_agent_api(prompt, "Results retry", PAPER_RESULTS_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
+        if result.strip().lower().startswith(meta_starts):
+            print("[Results Agent] Meta-response on retry, using fallback.")
+            return fallback_results("Meta-response detected twice.")
         return result
     except Exception as exc:
         print(f"Results agent failed; using fallback. Reason: {exc}")

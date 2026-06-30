@@ -2,10 +2,10 @@ from __future__ import annotations
 
 try:
     from .agent_api import call_agent_api
-    from .config import PAPER_CONCLUSION_PRINCIPAL_ID
+    from .config import PAPER_CONCLUSION_PRINCIPAL_ID, JSON_AGENT_ID
 except ImportError:
     from agent_api import call_agent_api
-    from config import PAPER_CONCLUSION_PRINCIPAL_ID
+    from config import PAPER_CONCLUSION_PRINCIPAL_ID, JSON_AGENT_ID
 
 
 CONCLUSION_PROMPT = """
@@ -47,10 +47,10 @@ Planner brief:
 {planner_brief}
 """
     try:
-        result = call_agent_api(prompt, "Conclusion", PAPER_CONCLUSION_PRINCIPAL_ID)
+        result = call_agent_api(prompt, "Conclusion", PAPER_CONCLUSION_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         if result.strip().lower().startswith(("i'll", "i will", "here is", "let me", "i'll write")):
             print("[Conclusion Agent] Meta-response detected, retrying...")
-            result = call_agent_api(prompt, "Conclusion retry", PAPER_CONCLUSION_PRINCIPAL_ID)
+            result = call_agent_api(prompt, "Conclusion retry", PAPER_CONCLUSION_PRINCIPAL_ID, agent_id=JSON_AGENT_ID)
         return result
     except Exception as exc:
         print(f"Conclusion agent failed; using fallback. Reason: {exc}")
