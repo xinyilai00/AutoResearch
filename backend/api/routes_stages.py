@@ -4,6 +4,7 @@ import os
 
 from pathlib import Path
 from typing import Optional
+from urllib import request
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,7 +16,7 @@ from backend.lit_agent_p2 import run_deep_literature_stage
 from backend.paper_agent import parse_args as parse_paper_args
 from backend.paper_agent import run_agent as run_paper_agent
 from backend.pi_agent import run_pi_agent
-from backend.pipeline_state import PipelineState, configure_experiment_anchor_from_prompt
+from backend.pipeline_state import PipelineState, set_experiment_anchor
 from backend.proposal_agent import run_proposal_stage
 from backend.research_question_agent import run_research_question_stage
 from backend.review_agent import run_review_from_file
@@ -67,15 +68,8 @@ def run_stage(stage: str, request: StageRunRequest) -> dict:
     stage = normalize_stage_name(stage)
     print(f"DEBUG: normalized stage = {stage}")
     state = PipelineState(request.run_dir)
-    prompt_for_anchor = request.topic
-    if prompt_for_anchor:
-        if request.topic:
-            state.set_metadata("topic", request.topic)
-        anchor = configure_experiment_anchor_from_prompt(prompt_for_anchor)
-        state.set_metadata("selected_repo_id", anchor["repo_id"])
-        state.set_metadata("selected_repo_name", anchor["repo_name"])
-        state.set_metadata("selected_repo_url", anchor["repo_url"])
-        state.set_metadata("hypothesis", anchor["hypothesis"])
+    if request.topic:
+        state.set_metadata("topic", request.topic)
 
     try:
         if request.feedback:
@@ -154,6 +148,29 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         deep_literature = request.deep_literature or state.read_active_output("deep_literature")
         if not question or not deep_literature:
             raise ValueError("Proposal stage requires research_question and deep_literature.")
+
+        # Step 1: Find and assess best repo dynamically
+        from backend.repo_finder_agent import run_repo_finder_agent
+        from backend.repo_assessor_agent import run_repo_assessor_agent
+        print("[Proposal Stage] Finding best repo for research question...")
+        repos = run_repo_finder_agent(question)
+        if not repos:
+            raise RuntimeError("Repo finder returned no candidates.")
+        selected_repo = run_repo_assessor_agent(repos, question)
+        if not selected_repo:
+            raise RuntimeError("Repo assessor could not select a repo.")
+
+        # Step 2: Set as experiment anchor
+        from backend.pipeline_state import set_experiment_anchor
+        set_experiment_anchor(
+            repo_name=selected_repo["name"],
+            repo_url=selected_repo["url"],
+            hypothesis=f"Using {selected_repo['name']}, this study investigates: {question.strip()}",
+        )
+        state.set_metadata("selected_repo_name", selected_repo["name"])
+        state.set_metadata("selected_repo_url", selected_repo["url"])
+
+        # Step 3: Run proposal as normal
         output = run_proposal_stage(question, deep_literature)
         return state.write_stage_output("proposal", output)
 

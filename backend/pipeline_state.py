@@ -5,10 +5,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-try:
-    from backend.repo_library import RepoMetadata, select_repo_for_prompt
-except ImportError:
-    from repo_library import RepoMetadata, select_repo_for_prompt
+from typing import TypedDict
+
+class RepoMetadata(TypedDict, total=False):
+    id: str
+    name: str
+    url: str
 
 # ── Experiment Anchor ──────────────────────────────────────────────────────────
 # Set dynamically from the user's prompt before stage agents run.
@@ -34,22 +36,7 @@ def set_experiment_anchor(repo_url: str, hypothesis: str, repo_id: str = "custom
     _EXPERIMENT_REPO_NAME = repo_name
 
 
-def configure_experiment_anchor_from_prompt(prompt: str) -> dict:
-    selected_repo = select_repo_for_prompt(prompt)
-    hypothesis = generate_hypothesis_from_repo(prompt, selected_repo)
-    set_experiment_anchor(
-        selected_repo["url"],
-        hypothesis,
-        repo_id=selected_repo["id"],
-        repo_name=selected_repo["name"],
-    )
-    return get_experiment_anchor()
-
-
 def get_experiment_anchor() -> dict:
-    if not _EXPERIMENT_REPO_URL or not _EXPERIMENT_HYPOTHESIS:
-        configure_experiment_anchor_from_prompt("general benchmark study")
-
     return {
         "repo_id": _EXPERIMENT_REPO_ID,
         "repo_name": _EXPERIMENT_REPO_NAME,

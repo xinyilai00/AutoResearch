@@ -8,42 +8,31 @@ from pathlib import Path
 import requests
 
 try:
-    from .config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+    from .config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API, JSON_AGENT_ID
+    from .agent_api import call_agent_api_json
 except ImportError:
-    from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
-
-try:
-    from backend.pipeline_state import get_experiment_anchor
-except ImportError:
-    from pipeline_state import get_experiment_anchor
+    from config import AGENT_ID, API_KEY, BASE_URL, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API, JSON_AGENT_ID
+    from agent_api import call_agent_api_json
 
 
 RESEARCH_QUESTION_SYSTEM_PROMPT = """
-You are the Research Question Agent in an autonomous research pipeline focused on benchmark-oriented research using a selected GitHub repository.
+You are the Research Question Agent in an autonomous research pipeline.
 
-You will be given:
-- The selected repository context, including benchmark intent and generated hypothesis
-- The literature review and gaps
+You will be given a research topic and a literature review.
 
-Your job is to output EXACTLY ONE research question that directly frames a runnable benchmark study using the selected repository, dataset resources, and evaluation metrics.
+Your job is to generate 5 to 10 candidate research questions based on the literature review and identified gaps.
 
 Rules:
-- Output exactly one question — no more, no less
-- The question must be one clear, concise sentence
-- The question must be directly tied to the selected repository and its benchmark workflow
-- The question must be empirically answerable by running or adapting the selected repository workflow
-- The question must point toward measurable datasets, methods, or benchmark metrics
-- Do NOT combine the selected repository with unrelated default examples or stale context from another repository
-- Do NOT introduce comparison baselines, datasets, or model families unless they are clearly supported by the selected repository context or literature review
-- If the selected repository is for tabular, anomaly, recommender, or database benchmarks, do NOT mention MNIST, CNNs, images, or PyTorch unless those terms appear in the selected repository context
+- Generate between 5 and 10 research questions
+- Each question must be one clear, concise, plain-English sentence
+- Each question must be understandable to a non-expert
+- Each question must be empirically answerable through a computational experiment
 - No jargon, no sub-clauses, no methodology embedded in the question
-- Return plain text only
-- Do not add any text before RESEARCH QUESTION or after the question itself
+- Questions should vary in angle and focus — do not just rephrase the same question
+- Return a JSON array of strings only, no explanation, no preamble
 
-Output in this exact format:
-
-RESEARCH QUESTION:
-[question]
+Example output:
+["Does increasing the number of layers in a GNN improve node classification accuracy?", "How does the homophily ratio of a graph dataset affect GNN performance?"]
 """
 
 
@@ -59,110 +48,16 @@ def read_text_or_path(value: str | Path) -> str:
     return str(value)
 
 
-def get_response(request_id: str) -> str:
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "X-Principal-Id": PRINCIPAL_ID,
-    }
-    response = requests.get(
-        f"{BASE_URL.rstrip('/')}/api/agent/run/stream",
-        headers=headers,
-        params={"requestId": request_id},
-        stream=True,
-        timeout=(30, 300),
-    )
-    response.encoding = "utf-8"
-    response.raise_for_status()
-
-    full_response = ""
-    try:
-        for line in response.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data:"):
-                continue
-            try:
-                data = json.loads(line[5:])
-            except json.JSONDecodeError:
-                continue
-
-            event_type = data.get("eventType")
-            if event_type in {"TEXT_START", "TEXT_DELTA"}:
-                full_response += data.get("data", {}).get("text", "")
-            if event_type in {"TEXT_END", "MESSAGE_COMPLETED", "RUN_COMPLETED", "DONE", "COMPLETED"}:
-                if full_response.strip():
-                    break
-    except requests.exceptions.RequestException:
-        if not full_response.strip():
-            raise
-
-    if not full_response.strip():
-        raise RuntimeError("Research Question agent stream ended without returning text.")
-    return full_response.strip()
-
-
-def parse_research_question(output: str) -> str:
-    for line in output.splitlines():
-        line = line.strip()
-        if "RESEARCH QUESTION:" in line.upper():
-            continue
-        if line and not line.upper().startswith("RESEARCH QUESTION"):
-            return line
-    return output.strip()
-
-
 def run_research_question_agent(topic: str, literature_output: str) -> str:
-    anchor = get_experiment_anchor()
-    anchor_context = f"""
-SELECTED BENCHMARK CONTEXT:
-- Repository: {anchor.get('repo_name', 'selected repository')}
-- Repository URL: {anchor['repo_url']}
-- Hypothesis: {anchor['hypothesis']}
-
-Generate a research question that directly frames a benchmark-oriented study using this selected repository only. Keep the question aligned with this repository's likely datasets, workflows, and measurable benchmark metrics, and ignore stale/default context from unrelated repositories.
-"""
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}",
-        "X-Principal-Id": PRINCIPAL_ID,
-    }
-    body = {
-        "agentId": AGENT_ID,
-        "userInput": (
-            anchor_context
-            + RESEARCH_QUESTION_SYSTEM_PROMPT
-            + f"\n\nRaw research topic:\n{topic}"
-            + f"\n\nLiterature review and gaps:\n{literature_output}"
-        ),
-    }
-    if SEND_MODEL_TO_AGENT_API and MODEL:
-        body["model"] = MODEL
-
-    last_error: Exception | None = None
-    for attempt in range(1, 4):
-        try:
-            response = requests.post(
-                f"{BASE_URL.rstrip('/')}/api/agent/run/async",
-                headers=headers,
-                json=body,
-                timeout=(60, 300),
-            )
-            response.raise_for_status()
-            request_id = response.json()["data"]["requestId"]
-            print("Got requestId:", request_id)
-            raw = get_response(request_id)
-            return parse_research_question(raw)
-        except requests.exceptions.RequestException as exc:
-            last_error = exc
-            print(f"Research Question API request failed on attempt {attempt}/3: {exc}")
-            if attempt < 3:
-                time.sleep(5 * attempt)
-        except RuntimeError as exc:
-            last_error = exc
-            print(f"Research Question API stream failed on attempt {attempt}/3: {exc}")
-            if attempt < 3:
-                time.sleep(5 * attempt)
-
-    raise RuntimeError(f"Research Question API unavailable: {last_error}")
+    prompt = (
+        RESEARCH_QUESTION_SYSTEM_PROMPT
+        + f"\n\nResearch topic:\n{topic}"
+        + f"\n\nLiterature review and gaps:\n{literature_output}"
+    )
+    result = call_agent_api_json(prompt, "Research Question")
+    if isinstance(result, list) and result:
+        return json.dumps(result)
+    raise RuntimeError(f"Research Question agent did not return a valid list. Got: {result}")
 
 
 def run_research_question_stage(topic: str, literature_output: str | Path) -> str:

@@ -6,12 +6,10 @@ from pathlib import Path
 
 try:
     from backend.pipeline_state import get_experiment_anchor
-    from backend.repo_library import get_repo_by_id, select_repo_for_prompt
     from backend.agent_api import call_agent_api, call_agent_api_json
     from backend.experiment_agent import sanitize_setup
 except ImportError:
     from pipeline_state import get_experiment_anchor
-    from repo_library import get_repo_by_id, select_repo_for_prompt
     from agent_api import call_agent_api, call_agent_api_json
     from experiment_agent import sanitize_setup
 
@@ -98,12 +96,12 @@ def read_text_or_path(value: str | Path) -> str:
 def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
     print("\n[Proposal Agent] Starting proposal generation...")
     anchor = get_experiment_anchor()
-    repo_id = anchor.get("repo_id", "")
     repo_url = anchor["repo_url"]
+    repo_name = anchor["repo_name"]
     hypothesis = anchor["hypothesis"]
 
-    selected_repo = get_repo_by_id(repo_id) or select_repo_for_prompt(research_question)
-    repo_name = selected_repo["name"]
+    if not repo_url or not repo_name:
+        raise RuntimeError("[Proposal Agent] No repo selected. Repo finder must run before proposal stage.")
 
     print(f"[Proposal Agent] Fetching README and file tree for {repo_name}...")
     readme = fetch_raw_file(repo_name, "README.md") or fetch_raw_file(repo_name, "README.rst")

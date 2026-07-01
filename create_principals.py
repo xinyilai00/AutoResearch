@@ -69,6 +69,15 @@ PRINCIPALS = {
         "paper-review-agent",
         "Principal for paper review and polish stage",
     ),
+    "REPO_GRADER_PRINCIPAL_ID": (
+        "repo-grader-agent",
+        "Principal for repository grading stage",
+    ),
+    "REPO_SELECTOR_PRINCIPAL_ID": (
+        "repo-selector-agent",
+        "Principal for repository selection stage",
+    ),
+
 }
 
 

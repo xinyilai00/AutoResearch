@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 
 export default function ResearchQuestionPage({ autonomous, topic, litOutput, questions, onQuestionsGenerated, selectedQuestion, onComplete }) {
   const navigate = useNavigate();
-  const [question, setQuestion] = useState(selectedQuestion || "");
+  const [candidates, setCandidates] = useState([]);
+  const [selected, setSelected] = useState(selectedQuestion || "");
+  const [custom, setCustom] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const abortControllerRef = useRef(null);
@@ -15,40 +17,42 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
   }, []);
 
   useEffect(() => {
-    setQuestion(selectedQuestion || "");
-  }, [selectedQuestion]);
-
-  useEffect(() => {
-    if (litOutput && topic && !selectedQuestion) {
-      generateQuestion();
+    if (litOutput && topic && candidates.length === 0 && !selectedQuestion) {
+      generateQuestions();
     }
   }, [litOutput, topic]);
 
-  async function generateQuestion() {
+  async function generateQuestions() {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
     setLoading(true);
     setError("");
-    setQuestion("");
+    setCandidates([]);
+    setSelected("");
+    setCustom("");
 
     try {
       const response = await fetch("http://localhost:8000/api/stages/research_questions/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: topic,
-          literature: litOutput,
-        }),
+        body: JSON.stringify({ topic: topic, literature: litOutput }),
         signal: signal
       });
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
       const data = await response.json();
-      const q = (data.output || "").trim();
-      setQuestion(q);
-      onQuestionsGenerated([q]);
+      let parsed = [];
+      try {
+        parsed = JSON.parse(data.output || "[]");
+        if (!Array.isArray(parsed)) parsed = [String(parsed)];
+      } catch (e) {
+        const text = (data.output || "").trim();
+        parsed = text ? [text] : [];
+      }
+      setCandidates(parsed);
+      onQuestionsGenerated(parsed);
     } catch (err) {
       if (err.name === "AbortError") return;
       setError(`Something went wrong: ${err.message}`);
@@ -58,34 +62,36 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
   }
 
   async function handleConfirm() {
-    if (!question) return;
+    const finalQuestion = custom.trim() || selected;
+    if (!finalQuestion) return;
 
     try {
       await fetch("http://localhost:8000/api/stages/research_question/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          research_question: question
-        })
+        body: JSON.stringify({ research_question: finalQuestion })
       });
     } catch (err) {
-      console.error("Failed to save research question to backend:", err);
+      console.error("Failed to save research question:", err);
     }
 
-    onComplete(question);
+    onComplete(finalQuestion);
     navigate("/deep-literature");
   }
 
   useEffect(() => {
-    if (question && autonomous) {
+    if (candidates.length > 0 && autonomous) {
+      setSelected(candidates[0]);
       handleConfirm();
     }
-  }, [question, autonomous]);
+  }, [candidates, autonomous]);
+
+  const finalQuestion = custom.trim() || selected;
 
   return (
     <div className="stage-page">
       <h1>Research Question</h1>
-      <p>The pipeline will generate a single research question scoped to the experiment being replicated.</p>
+      <p>Select one of the generated research questions, or write your own below.</p>
 
       {!litOutput && (
         <div className="warning-box">
@@ -96,30 +102,76 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
       {loading && (
         <div className="status-indicator">
           <div className="spinner"></div>
-          <p>Generating research question...</p>
+          <p>Generating research questions...</p>
         </div>
       )}
 
       {error && <div className="warning-box">{error}</div>}
 
-      {question && !loading && (
-        <div className="output-box">
-          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{question}</div>
+      {candidates.length > 0 && !loading && (
+        <div style={{ marginTop: "16px" }}>
+          {candidates.map((q, i) => (
+            <div
+              key={i}
+              onClick={() => { setSelected(q); setCustom(""); }}
+              style={{
+                padding: "12px 16px",
+                marginBottom: "12px",
+                border: selected === q && !custom.trim() ? "2px solid #6d3fc0" : "1px solid #ddd",
+                borderRadius: "10px",
+                cursor: "pointer",
+                background: selected === q && !custom.trim() ? "#f3eeff" : "#fff",
+                fontSize: "13.5px",
+                lineHeight: "1.55",
+                color: "#1a1a1a",
+                transition: "border 0.15s, background 0.15s",
+              }}
+            >
+              {q}
+            </div>
+          ))}
+
+          <div style={{ marginTop: "20px" }}>
+            <p style={{ marginBottom: "8px", fontWeight: 500, fontSize: "14px" }}>Or write your own:</p>
+            <textarea
+              rows={3}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                border: "1px solid #ddd",
+                fontSize: "14px",
+                fontFamily: "inherit",
+                lineHeight: "1.5",
+                resize: "vertical",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+              placeholder="Type a custom research question..."
+              value={custom}
+              onChange={(e) => { setCustom(e.target.value); setSelected(""); }}
+            />
+          </div>
         </div>
       )}
 
-      {question && !loading && !autonomous && (
-        <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
-          <button className="run-button" onClick={generateQuestion}>
+      {candidates.length > 0 && !loading && !autonomous && (
+        <div style={{ display: "flex", gap: "16px", marginTop: "20px" }}>
+          <button className="run-button" style={{ fontSize: "13px" }} onClick={generateQuestions}>
             Regenerate
           </button>
-          <button className="start-button" onClick={handleConfirm}>
-            Confirm & Continue to Literature Review →
+          <button
+            className="start-button"
+            style={{ fontSize: "13px" }}
+            onClick={handleConfirm}
+            disabled={!finalQuestion}
+          >
+            Confirm & Continue →
           </button>
         </div>
       )}
 
-      {question && autonomous && (
+      {candidates.length > 0 && autonomous && (
         <p className="auto-note">Autonomous mode — continuing automatically...</p>
       )}
     </div>
