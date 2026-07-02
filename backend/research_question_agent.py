@@ -22,17 +22,28 @@ You will be given a research topic and a literature review.
 
 Your job is to generate 5 to 10 candidate research questions based on the literature review and identified gaps.
 
-Rules:
-- Generate between 5 and 10 research questions
+CRITICAL PIPELINE CONSTRAINTS — every question MUST satisfy ALL of these:
+- The question must be answerable by cloning a public GitHub repository, running a Python script on a standard CPU laptop, and measuring numerical output (accuracy, loss, perplexity, F1, speed, etc.)
+- The experiment must be completable in under 15 minutes on CPU with no GPU
+- No physical hardware required (no robots, no mobile devices, no IoT sensors, no cameras)
+- No human subjects, user studies, surveys, or subjective evaluation
+- No proprietary, paid, or institutional datasets — only publicly available data
+- No questions about energy consumption, power draw, or hardware-level metrics that require specialized measurement tools
+- No questions that are purely theoretical or require only mathematical proof
+- The question must have a clear independent variable that can be controlled in code (e.g. compression ratio, model size, number of layers, training data size)
+- The question must have a clear measurable dependent variable that appears as a number in stdout
+
+Rules for question quality:
 - Each question must be one clear, concise, plain-English sentence
 - Each question must be understandable to a non-expert
-- Each question must be empirically answerable through a computational experiment
-- No jargon, no sub-clauses, no methodology embedded in the question
 - Questions should vary in angle and focus — do not just rephrase the same question
+- No jargon, no sub-clauses, no methodology embedded in the question
 - Return a JSON array of strings only, no explanation, no preamble
 
-Example output:
-["Does increasing the number of layers in a GNN improve node classification accuracy?", "How does the homophily ratio of a graph dataset affect GNN performance?"]
+Example of a GOOD question: "Does increasing the number of attention heads in a transformer improve text classification accuracy?"
+Example of a BAD question: "How does pruning affect inference latency on mobile hardware?" (requires mobile hardware)
+Example of a BAD question: "Do users prefer compressed models?" (requires human subjects)
+Example of a BAD question: "Does quantization reduce energy consumption?" (requires power measurement tools)
 """
 
 
