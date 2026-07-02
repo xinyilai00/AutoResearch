@@ -3,14 +3,17 @@ from __future__ import annotations
 import os
 import base64
 import concurrent.futures
+import time
 import requests
 
 try:
     from .agent_api import call_agent_api_json
     from .config import JSON_AGENT_ID
+    from .progress import log
 except ImportError:
     from agent_api import call_agent_api_json
     from config import JSON_AGENT_ID
+    from progress import log
 
 
 from dotenv import load_dotenv
@@ -38,7 +41,7 @@ REPO_RANKER_PROMPT = """You are an expert research engineer evaluating GitHub re
 The pipeline will:
 1. Clone the repo
 2. Read the README and source files
-3. Write and run an experiment script
+3. Write and run a Python experiment script
 4. Parse numerical results for an academic paper
 
 You will be given a research topic and a list of GitHub repositories — each with their name, description, and README content.
@@ -64,19 +67,17 @@ Return ONLY a JSON array of up to 10 objects, no explanation, no preamble:
 
 
 def generate_github_queries(topic: str) -> list[str]:
-    """Ask LLM to generate 10 GitHub-optimized search queries for the topic."""
     prompt = f"{GITHUB_QUERY_PROMPT}\n\nResearch topic: {topic}"
-    print("[Repo Finder] Generating GitHub search queries...")
+    log("[Repo Finder] Generating GitHub search queries...")
     result = call_agent_api_json(prompt, "GitHub Query Generator")
     if not isinstance(result, list):
-        print("[Repo Finder] Query generator did not return a list:", result)
+        log("[Repo Finder] Query generator did not return a list.")
         return []
-    print(f"[Repo Finder] Generated queries: {result}")
+    log(f"[Repo Finder] Generated queries: {result}")
     return result
 
 
 def search_github(query: str, max_results: int = 25) -> list[dict]:
-    """Search GitHub repos and return raw results."""
     headers = {"Accept": "application/vnd.github+json"}
     if GITHUB_TOKEN:
         headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
@@ -88,28 +89,34 @@ def search_github(query: str, max_results: int = 25) -> list[dict]:
         "per_page": max_results,
     }
 
-    response = requests.get(GITHUB_SEARCH_URL, headers=headers, params=params)
-    if response.status_code != 200:
-        print(f"[Repo Finder] GitHub API error {response.status_code}: {response.text[:200]}")
-        return []
+    for attempt in range(3):
+        try:
+            response = requests.get(GITHUB_SEARCH_URL, headers=headers, params=params, timeout=15)
+            if response.status_code != 200:
+                log(f"[Repo Finder] GitHub API error {response.status_code}: {response.text[:200]}")
+                return []
+            items = response.json().get("items", [])
+            return [
+                {
+                    "name": item["full_name"],
+                    "url": item["html_url"],
+                    "description": item.get("description") or "",
+                    "stars": item.get("stargazers_count", 0),
+                    "language": item.get("language") or "",
+                    "updated_at": item.get("updated_at", ""),
+                }
+                for item in items
+            ]
+        except Exception as e:
+            log(f"[Repo Finder] GitHub search failed on attempt {attempt + 1}/3: {e}")
+            if attempt < 2:
+                time.sleep(2)
 
-    items = response.json().get("items", [])
-    print(f"[Repo Finder] Fetched {len(items)} candidates.")
-    return [
-        {
-            "name": item["full_name"],
-            "url": item["html_url"],
-            "description": item.get("description") or "",
-            "stars": item.get("stargazers_count", 0),
-            "language": item.get("language") or "",
-            "updated_at": item.get("updated_at", ""),
-        }
-        for item in items
-    ]
+    log(f"[Repo Finder] GitHub search gave up after 3 attempts for query: {query}")
+    return []
 
 
 def search_all_queries(queries: list[str], results_per_query: int = 25, top_n: int = 25) -> list[dict]:
-    """Run all queries, merge results, deduplicate, sort by stars, return top_n."""
     all_repos: dict[str, dict] = {}
 
     for query in queries:
@@ -118,15 +125,14 @@ def search_all_queries(queries: list[str], results_per_query: int = 25, top_n: i
             if repo["name"] not in all_repos:
                 all_repos[repo["name"]] = repo
 
-    print(f"[Repo Finder] Total unique candidates across all queries: {len(all_repos)}")
+    log(f"[Repo Finder] Total unique candidates across all queries: {len(all_repos)}")
     sorted_repos = sorted(all_repos.values(), key=lambda x: x["stars"], reverse=True)
     top = sorted_repos[:top_n]
-    print(f"[Repo Finder] Taking top {len(top)} by stars for README fetching.")
+    log(f"[Repo Finder] Taking top {len(top)} by stars for README fetching.")
     return top
 
 
 def fetch_readme(repo_name: str) -> str:
-    """Fetch and decode README content for a single repo. Returns empty string on failure."""
     headers = {"Accept": "application/vnd.github+json"}
     if GITHUB_TOKEN:
         headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
@@ -140,15 +146,14 @@ def fetch_readme(repo_name: str) -> str:
         if r.status_code == 200:
             content = r.json().get("content", "")
             decoded = base64.b64decode(content).decode("utf-8", errors="replace")
-            return decoded[:2000]
+            return decoded[:1000]
     except Exception:
         pass
     return ""
 
 
 def fetch_readmes_parallel(candidates: list[dict], max_workers: int = 10) -> list[dict]:
-    """Fetch READMEs for all candidates in parallel, add to each candidate dict."""
-    print(f"[Repo Finder] Fetching READMEs for {len(candidates)} repos in parallel...")
+    log(f"[Repo Finder] Fetching READMEs for {len(candidates)} repos in parallel...")
 
     def fetch(candidate):
         readme = fetch_readme(candidate["name"])
@@ -158,12 +163,11 @@ def fetch_readmes_parallel(candidates: list[dict], max_workers: int = 10) -> lis
         results = list(executor.map(fetch, candidates))
 
     readme_count = sum(1 for r in results if r["readme"])
-    print(f"[Repo Finder] Successfully fetched {readme_count}/{len(candidates)} READMEs.")
+    log(f"[Repo Finder] Successfully fetched {readme_count}/{len(candidates)} READMEs.")
     return results
 
 
 def rank_repos_with_llm(topic: str, candidates: list[dict]) -> list[dict]:
-    """Pass candidates with READMEs to LLM for ranking. Returns top 10."""
     candidates_text = "\n\n".join(
         f"### {r['name']} ({r['stars']} stars)\n"
         f"Description: {r['description']}\n"
@@ -179,32 +183,28 @@ GitHub repositories to evaluate:
 {candidates_text}
 """
 
-    print(f"[Repo Finder] Asking LLM to rank {len(candidates)} candidates with READMEs...")
+    log(f"[Repo Finder] Asking LLM to rank {len(candidates)} candidates with READMEs...")
     result = call_agent_api_json(prompt, "Repo Ranker")
 
     if not isinstance(result, list):
-        print("[Repo Finder] LLM did not return a list, raw result:", result)
+        log("[Repo Finder] LLM did not return a list.")
         return []
 
     return result[:10]
 
 
 def run_repo_finder_agent(topic: str) -> list[dict]:
-    """
-    Main entry point. Takes topic string.
-    Returns list of up to 10 ranked repos as dicts with name, url, description, reason.
-    """
     queries = generate_github_queries(topic)
     if not queries:
-        print("[Repo Finder] No queries generated, aborting.")
+        log("[Repo Finder] No queries generated, aborting.")
         return []
 
     candidates = search_all_queries(queries)
     if not candidates:
-        print("[Repo Finder] No candidates found, aborting.")
+        log("[Repo Finder] No candidates found, aborting.")
         return []
 
     candidates = fetch_readmes_parallel(candidates)
     ranked = rank_repos_with_llm(topic, candidates)
-    print(f"[Repo Finder] Done. Selected {len(ranked)} repos.")
+    log(f"[Repo Finder] Done. Selected {len(ranked)} repos.")
     return ranked

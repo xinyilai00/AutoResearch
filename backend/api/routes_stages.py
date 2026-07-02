@@ -149,10 +149,11 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         if not question or not deep_literature:
             raise ValueError("Proposal stage requires research_question and deep_literature.")
 
-        # Step 1: Find and assess best repo dynamically
         from backend.repo_finder_agent import run_repo_finder_agent
         from backend.repo_assessor_agent import run_repo_assessor_agent
-        print("[Proposal Stage] Finding best repo for research question...")
+        from backend.progress import log, clear
+        clear()
+        log("[Proposal Stage] Starting repo search...")
         repos = run_repo_finder_agent(question)
         if not repos:
             raise RuntimeError("Repo finder returned no candidates.")
@@ -160,18 +161,17 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         if not selected_repo:
             raise RuntimeError("Repo assessor could not select a repo.")
 
-        # Step 2: Set as experiment anchor
-        from backend.pipeline_state import set_experiment_anchor
         set_experiment_anchor(
-            repo_name=selected_repo["name"],
             repo_url=selected_repo["url"],
+            repo_name=selected_repo["name"],
             hypothesis=f"Using {selected_repo['name']}, this study investigates: {question.strip()}",
         )
         state.set_metadata("selected_repo_name", selected_repo["name"])
         state.set_metadata("selected_repo_url", selected_repo["url"])
 
-        # Step 3: Run proposal as normal
+        log(f"[Proposal Stage] Selected repo: {selected_repo['name']}. Generating proposal...")
         output = run_proposal_stage(question, deep_literature)
+        log("[Proposal Stage] Proposal complete.")
         return state.write_stage_output("proposal", output)
 
     if stage == "experiment":
@@ -316,3 +316,11 @@ def download_pdf(run_dir: str = "paper_runs/latest"):
 </head>""")
 
     return HTMLResponse(content=html)
+
+@router.get("/api/progress")
+def get_progress():
+    try:
+        with open("paper_runs/latest/progress.log", "r") as f:
+            return {"lines": f.read().splitlines()}
+    except FileNotFoundError:
+        return {"lines": []}

@@ -20,9 +20,10 @@ You will be given a research topic and a list of graded repositories, each with:
 - Relevance score (1-10) and reason
 - Accessibility score (1-10) and reason
 - Overall assessment
-- Boolean flags: has_clear_entrypoint, requires_proprietary_data, is_deprecated
+- Boolean flags: has_clear_entrypoint, requires_proprietary_data, requires_display_server, is_deprecated
 
-Your job is to select the SINGLE best repository. Use holistic judgment — do not just pick the highest average score. A highly relevant repo that is slightly harder to run is better than an easy-to-run repo that barely matches the topic. Immediately disqualify any repo where requires_proprietary_data is true or is_deprecated is true.
+Your job is to select the SINGLE best repository. Use holistic judgment — do not just pick the highest average score. A highly relevant repo that is slightly harder to run is better than an easy-to-run repo that barely matches the topic. 
+Immediately disqualify any repo where requires_proprietary_data is true, requires_display_server is true, or is_deprecated is true.
 
 Output ONLY a JSON object in exactly this format, no explanation, no preamble:
 {
@@ -52,6 +53,7 @@ def run_repo_selector_agent(graded_repos: list[dict], topic: str) -> dict | None
         f"Overall: {r.get('overall_assessment', '')}\n"
         f"Has clear entrypoint: {r.get('has_clear_entrypoint', False)}\n"
         f"Requires proprietary data: {r.get('requires_proprietary_data', True)}\n"
+        f"Requires display server: {r.get('requires_display_server', False)}\n"
         f"Is deprecated: {r.get('is_deprecated', False)}"
         for r in graded_repos
     )
