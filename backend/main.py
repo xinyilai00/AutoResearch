@@ -4,19 +4,34 @@ import json
 import os
 from pathlib import Path
 
-from experiment_agent import run_experiment_stage
-from lit_agent_p1 import run_literature_stage
-from lit_agent_p2 import run_deep_literature_stage
-from paper_agent import parse_args as parse_paper_args
-from paper_agent import run_agent as run_paper_agent
-from pi_agent import run_pi_agent
-from pipeline_state import PipelineState, generate_hypothesis_from_repo, set_experiment_anchor
-from proposal_agent import run_proposal_stage
-from repo_finder_agent import run_repo_finder_agent
-from repo_grader_agent import run_repo_grader_agent
-from repo_selector_agent import run_repo_selector_agent
-from research_question_agent import run_research_question_stage
-from review_agent import run_review_from_file
+try:
+    from .experiment_agent import run_experiment_stage
+    from .lit_agent_p1 import run_literature_stage
+    from .lit_agent_p2 import run_deep_literature_stage
+    from .paper_agent import parse_args as parse_paper_args
+    from .paper_agent import run_agent as run_paper_agent
+    from .pi_agent import run_pi_agent
+    from .pipeline_state import PipelineState, generate_hypothesis_from_repo, set_experiment_anchor
+    from .proposal_agent import run_proposal_stage
+    from .repo_finder_agent import run_repo_finder_agent
+    from .repo_grader_agent import run_repo_grader_agent
+    from .repo_selector_agent import run_repo_selector_agent
+    from .research_question_agent import run_research_question_stage
+    from .review_agent import run_review_from_file
+except ImportError:
+    from experiment_agent import run_experiment_stage
+    from lit_agent_p1 import run_literature_stage
+    from lit_agent_p2 import run_deep_literature_stage
+    from paper_agent import parse_args as parse_paper_args
+    from paper_agent import run_agent as run_paper_agent
+    from pi_agent import run_pi_agent
+    from pipeline_state import PipelineState, generate_hypothesis_from_repo, set_experiment_anchor
+    from proposal_agent import run_proposal_stage
+    from repo_finder_agent import run_repo_finder_agent
+    from repo_grader_agent import run_repo_grader_agent
+    from repo_selector_agent import run_repo_selector_agent
+    from research_question_agent import run_research_question_stage
+    from review_agent import run_review_from_file
 
 
 def user_selection(questions: list[str]) -> str:
@@ -167,7 +182,7 @@ def main():
     experiment_status = "redesign_needed" if "REDESIGN_NEEDED" in experiment_output else "generated"
     state.write_stage_output("experiment", experiment_output, status=experiment_status)
     print(experiment_output)
-    return
+
     print("\n--- Paper Agent ---")
     paper_args = parse_paper_args(
         [
