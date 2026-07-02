@@ -85,7 +85,10 @@ def run_repo_selection(topic: str, state: PipelineState) -> dict:
     graded_repos = []
     for index, candidate in enumerate(candidates, start=1):
         print(f"\n[{index}/{len(candidates)}] {candidate.get('name', 'unknown')}")
-        graded_repos.append(run_repo_grader_agent(candidate, topic, token))
+        try:
+            graded_repos.append(run_repo_grader_agent(candidate, topic, token))
+        except Exception as exc:
+            print(f"[Repo Grader] Skipping {candidate.get('name', 'unknown')} after grading failure: {exc}")
 
     if not graded_repos:
         raise RuntimeError("Repo Grader returned no usable repository assessments.")

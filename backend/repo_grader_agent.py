@@ -82,7 +82,11 @@ def fetch_file_tree(repo_name: str, token: str) -> str:
     headers = get_github_headers(token)
     for branch in ["main", "master"]:
         url = f"https://api.github.com/repos/{repo_name}/git/trees/{branch}?recursive=1"
-        r = requests.get(url, headers=headers, timeout=10)
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+        except requests.RequestException as exc:
+            log(f"[Repo Grader] File tree fetch failed for {repo_name}@{branch}: {exc}")
+            continue
         if r.status_code == 200:
             items = r.json().get("tree", [])
             files = [item["path"] for item in items if item["type"] == "blob"]
@@ -93,11 +97,15 @@ def fetch_file_tree(repo_name: str, token: str) -> str:
 def fetch_readme(repo_name: str, token: str) -> str:
     import base64
     headers = get_github_headers(token)
-    r = requests.get(
-        f"https://api.github.com/repos/{repo_name}/readme",
-        headers=headers,
-        timeout=10,
-    )
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{repo_name}/readme",
+            headers=headers,
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        log(f"[Repo Grader] README fetch failed for {repo_name}: {exc}")
+        return ""
     if r.status_code == 200:
         content = r.json().get("content", "")
         decoded = base64.b64decode(content).decode("utf-8", errors="replace")
@@ -118,7 +126,11 @@ File tree:
 Return ONLY a JSON array of file path strings, no explanation.
 Example: ["main.py", "src/model.py", "train.py"]
 """
-    selected = call_agent_api_json(file_selection_prompt, "File Selector")
+    try:
+        selected = call_agent_api_json(file_selection_prompt, "File Selector")
+    except Exception as exc:
+        log(f"[Repo Grader] File Selector failed for {repo_name}: {exc}")
+        return ""
     if not isinstance(selected, list):
         return ""
 
@@ -126,7 +138,11 @@ Example: ["main.py", "src/model.py", "train.py"]
     for path in selected[:6]:
         for branch in ["main", "master"]:
             url = f"https://raw.githubusercontent.com/{repo_name}/{branch}/{path}"
-            r = requests.get(url, headers=headers, timeout=10)
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+            except requests.RequestException as exc:
+                log(f"[Repo Grader] Source fetch failed for {repo_name}/{path}@{branch}: {exc}")
+                continue
             if r.status_code == 200:
                 contents.append(f"### {path}\n{r.text[:1000]}")
                 break
