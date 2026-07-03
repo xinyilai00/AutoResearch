@@ -9,6 +9,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import requests as http_requests
+
 try:
     from backend.pipeline_state import get_experiment_anchor
     from backend.agent_api import call_agent_api, call_agent_api_json
@@ -314,7 +316,12 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
 
     print("[Experiment Agent] Running experiment script...")
     before_snapshot = snapshot_repo_files()
-    returncode, stdout, stderr = run_script_file(venv_python, run_script_str, cwd=CLONE_DIR)
+    from backend.config import COLAB_EXECUTOR_URL
+    if COLAB_EXECUTOR_URL:
+        print(f"[Experiment Agent] Sending script to Colab executor...")
+        returncode, stdout, stderr = run_script_on_colab(run_script_str, install_commands, COLAB_EXECUTOR_URL)
+    else:
+        returncode, stdout, stderr = run_script_file(venv_python, run_script_str, CLONE_DIR)
     after_snapshot = snapshot_repo_files()
     changed_files = diff_snapshots(before_snapshot, after_snapshot)
     pre_existing_files = list(before_snapshot.keys())
@@ -354,6 +361,19 @@ def parse_results_with_llm(stdout: str, stderr: str, repo_url: str, expected_met
         label="ResultsParser",
         agent_id=JSON_AGENT_ID,
     )
+
+def run_script_on_colab(script: str, install_commands: list[str], colab_url: str) -> tuple[int, str, str]:
+    """Send script to Colab executor and return (returncode, stdout, stderr)."""
+    try:
+        response = http_requests.post(
+            f"{colab_url}/execute",
+            json={"install_commands": install_commands, "script": script},
+            timeout=1800
+        )
+        data = response.json()
+        return data["returncode"], data["stdout"], data["stderr"]
+    except Exception as e:
+        return -1, "", f"Colab executor error: {e}"
 
 
 def run_experiment_stage(
