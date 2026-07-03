@@ -8,13 +8,12 @@ import requests
 
 try:
     from .agent_api import call_agent_api_json
-    from .config import JSON_AGENT_ID
+    from .config import JSON_AGENT_ID, REPO_RANKER_AGENT_ID
     from .progress import log
 except ImportError:
     from agent_api import call_agent_api_json
-    from config import JSON_AGENT_ID
+    from config import JSON_AGENT_ID, REPO_RANKER_AGENT_ID
     from progress import log
-
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -184,7 +183,7 @@ GitHub repositories to evaluate:
 """
 
     log(f"[Repo Finder] Asking LLM to rank {len(candidates)} candidates with READMEs...")
-    result = call_agent_api_json(prompt, "Repo Ranker")
+    result = call_agent_api_json(prompt, "Repo Ranker", agent_id=REPO_RANKER_AGENT_ID)
 
     if not isinstance(result, list):
         log("[Repo Finder] LLM did not return a list.")

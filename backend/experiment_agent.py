@@ -276,7 +276,7 @@ def apply_file_patches(patches: list[dict]) -> None:
             print(f"[Experiment Agent] Failed to patch {patch.get('file')}: {e}")
 
 
-def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str) -> tuple[int, str, str]:
+def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str, repo_url: str = "") -> tuple[int, str, str]:
     install_commands = setup.get("install_commands", [])
     run_script_str = setup.get("run_script", "").strip()
     data_setup_commands = setup.get("data_setup_commands", [])
@@ -319,7 +319,7 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
     from backend.config import COLAB_EXECUTOR_URL
     if COLAB_EXECUTOR_URL:
         print(f"[Experiment Agent] Sending script to Colab executor...")
-        returncode, stdout, stderr = run_script_on_colab(run_script_str, install_commands, COLAB_EXECUTOR_URL)
+        returncode, stdout, stderr = run_script_on_colab(run_script_str, install_commands, COLAB_EXECUTOR_URL, repo_url=repo_url)
     else:
         returncode, stdout, stderr = run_script_file(venv_python, run_script_str, CLONE_DIR)
     after_snapshot = snapshot_repo_files()
@@ -362,12 +362,11 @@ def parse_results_with_llm(stdout: str, stderr: str, repo_url: str, expected_met
         agent_id=JSON_AGENT_ID,
     )
 
-def run_script_on_colab(script: str, install_commands: list[str], colab_url: str) -> tuple[int, str, str]:
-    """Send script to Colab executor and return (returncode, stdout, stderr)."""
+def run_script_on_colab(script: str, install_commands: list[str], colab_url: str, repo_url: str = "") -> tuple[int, str, str]:
     try:
         response = http_requests.post(
             f"{colab_url}/execute",
-            json={"install_commands": install_commands, "script": script},
+            json={"install_commands": install_commands, "script": script, "repo_url": repo_url},
             timeout=1800
         )
         data = response.json()
@@ -436,7 +435,7 @@ def run_experiment_stage(
             print("[Experiment Agent] Re-cloning repo fresh for this attempt...")
             shutil.rmtree(CLONE_DIR)
             run_command(["git", "clone", "--depth", "1", repo_url, str(CLONE_DIR)], cwd=Path("."), timeout=600)
-        returncode, stdout, stderr = execute_setup(setup, venv_python, venv_pip, repo_name)
+        returncode, stdout, stderr = execute_setup(setup, venv_python, venv_pip, repo_name, repo_url=repo_url)
         attempts.append({"attempt": attempt, "returncode": returncode, "stderr_tail": stderr[-500:]})
 
         # Log every attempt's full output, not just the last

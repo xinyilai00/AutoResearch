@@ -13,10 +13,10 @@ except ImportError:
 
 import json as _json
 
-def call_agent_api_json(user_input: str, label: str, max_retries: int = 2) -> dict:
+def call_agent_api_json(user_input: str, label: str, max_retries: int = 2, agent_id: int | None = None) -> dict:
     prompt = user_input
     for attempt in range(max_retries + 1):
-        response = call_agent_api(prompt, label=label, agent_id=JSON_AGENT_ID).strip()
+        response = call_agent_api(prompt, label=label, agent_id=agent_id or JSON_AGENT_ID).strip()
         clean = response.replace("```json", "").replace("```", "").strip()
         try:
             return _json.loads(clean)
