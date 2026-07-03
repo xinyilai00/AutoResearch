@@ -93,12 +93,22 @@ def read_text_or_path(value: str | Path) -> str:
         pass
     return str(value)
 
-def run_proposal_stage(research_question: str, deep_literature_review: str | Path) -> str:
+def run_proposal_stage(
+    research_question: str,
+    deep_literature_review: str | Path,
+    selected_repo: dict | None = None,
+) -> str:
     print("\n[Proposal Agent] Starting proposal generation...")
     anchor = get_experiment_anchor()
-    repo_url = anchor["repo_url"]
-    repo_name = anchor["repo_name"]
-    hypothesis = anchor["hypothesis"]
+
+    selected_repo = selected_repo or {}
+    repo_url = selected_repo.get("url") or anchor["repo_url"]
+    repo_name = selected_repo.get("name") or selected_repo.get("repo") or anchor["repo_name"]
+    hypothesis = (
+        selected_repo.get("hypothesis")
+        or anchor["hypothesis"]
+        or f"Using {repo_name}, this study investigates: {research_question.strip()}"
+    )
 
     if not repo_url or not repo_name:
         raise RuntimeError("[Proposal Agent] No repo selected. Repo finder must run before proposal stage.")

@@ -174,7 +174,7 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         state.set_metadata("selected_repo_reason", selected_repo.get("reason", selected_repo.get("overall_assessment", "")))
 
         log(f"[Proposal Stage] Selected repo: {selected_repo['name']}. Generating proposal...")
-        output = run_proposal_stage(question, deep_literature)
+        output = run_proposal_stage(question, deep_literature, selected_repo=selected_repo)
         log("[Proposal Stage] Proposal complete.")
         return state.write_stage_output("proposal", output)
 
