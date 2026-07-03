@@ -39,6 +39,16 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
     }
   }
 
+
+  function normalizeRepoUrl(url) {
+    return (url || "").trim().replace(/\.git$/, "").replace(/\/$/, "");
+  }
+
+  function repoUrlFromProposal(text) {
+    const match = (text || "").match(/^Repo:\s*(.+)$/m);
+    return match ? normalizeRepoUrl(match[1]) : "";
+  }
+
   async function fetchProgressLines() {
     try {
       const r = await fetch("http://localhost:8000/api/progress");
@@ -126,6 +136,10 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
     }
   }
 
+  const outputRepoUrl = repoUrlFromProposal(output);
+  const selectedRepoUrl = normalizeRepoUrl(repoInfo?.url);
+  const hasRepoMismatch = Boolean(outputRepoUrl && selectedRepoUrl && outputRepoUrl !== selectedRepoUrl);
+
   useEffect(() => {
     if (done && autonomous) {
       const timer = setTimeout(() => navigate("/experiment"), 1500);
@@ -165,7 +179,13 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
 
         {error && <div className="warning-box">{error}</div>}
 
-        {output && (
+        {hasRepoMismatch && (
+          <div className="warning-box">
+            This proposal output belongs to {outputRepoUrl}, but the selected repo is {selectedRepoUrl}. Rerun Proposal to regenerate it for the selected repo.
+          </div>
+        )}
+
+        {output && !hasRepoMismatch && (
           <div className="output-box">
             <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               {output.includes("EXPERIMENT EXECUTION SPEC:")

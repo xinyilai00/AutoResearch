@@ -200,7 +200,7 @@ def main():
     print(f"\nRepo selected for proposal: {selected_repo.get('name')} ({selected_repo.get('url')})")
 
     print("\n--- Proposal Agent ---")
-    proposal_output = run_proposal_stage(selected_question, deep_lit_output)
+    proposal_output = run_proposal_stage(selected_question, deep_lit_output, selected_repo=selected_repo)
     state.write_stage_output("proposal", proposal_output)
     print(proposal_output)
 
