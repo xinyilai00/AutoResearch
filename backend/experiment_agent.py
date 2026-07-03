@@ -153,16 +153,51 @@ def sanitize_setup(setup: dict) -> dict:
     return setup
 
 
-def install_packages(venv_pip: Path, packages: list[str]) -> None:
+def package_base_name(package: str) -> str:
+    base = package.strip()
+    for marker in ["==", ">=", "<=", "~=", "!=", ">", "<"]:
+        base = base.split(marker)[0]
+    return base.split("[")[0].strip()
+
+
+def has_version_constraint(package: str) -> bool:
+    return any(marker in package for marker in ["==", ">=", "<=", "~=", "!=", ">", "<"])
+
+
+def is_package_installed(venv_python: Path, package: str) -> bool:
+    base_package = package_base_name(package)
+    if not base_package:
+        return False
+    returncode, _, _ = run_command(
+        [str(venv_python), "-m", "pip", "show", base_package],
+        cwd=Path("."),
+        timeout=30,
+    )
+    return returncode == 0
+
+
+def install_packages(venv_python: Path, venv_pip: Path, packages: list[str]) -> None:
     for package in packages:
         package = package.strip()
         if not package:
             continue
-        print(f"[Experiment Agent] Installing: {package}")
+
+        base_package = package_base_name(package)
+        if not has_version_constraint(package) and is_package_installed(venv_python, package):
+            print(f"[Experiment Agent] Already installed, skipping: {base_package}")
+            continue
+
+        if has_version_constraint(package):
+            print(f"[Experiment Agent] Installing/checking version constraint: {package}")
+        else:
+            print(f"[Experiment Agent] Installing missing package: {package}")
+
         returncode, _, stderr = run_command([str(venv_pip), "install", package], cwd=Path("."), timeout=300)
         if returncode != 0:
-            base_package = package.split("==")[0].split(">=")[0].split("<=")[0].strip()
-            if base_package != package:
+            if base_package and base_package != package:
+                if is_package_installed(venv_python, base_package):
+                    print(f"[Experiment Agent] Base package already installed after failed constrained install: {base_package}")
+                    continue
                 print(f"[Experiment Agent] Retrying without version pin: {base_package}")
                 returncode, _, stderr = run_command([str(venv_pip), "install", base_package], cwd=Path("."), timeout=300)
             if returncode != 0:
@@ -245,7 +280,7 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
     data_setup_commands = setup.get("data_setup_commands", [])
     file_patches = setup.get("file_patches", [])
 
-    install_packages(venv_pip, install_commands)
+    install_packages(venv_python, venv_pip, install_commands)
 
     if file_patches:
         print(f"[Experiment Agent] Applying {len(file_patches)} file patch(es)...")
