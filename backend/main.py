@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 from pathlib import Path
@@ -98,12 +99,20 @@ def run_repo_selection(topic: str, state: PipelineState) -> dict:
     print("\n--- Repo Grader Agent ---")
     token = os.getenv("GITHUB_TOKEN", "")
     graded_repos = []
-    for index, candidate in enumerate(candidates, start=1):
-        print(f"\n[{index}/{len(candidates)}] {candidate.get('name', 'unknown')}")
-        try:
-            graded_repos.append(run_repo_grader_agent(candidate, topic, token))
-        except Exception as exc:
-            print(f"[Repo Grader] Skipping {candidate.get('name', 'unknown')} after grading failure: {exc}")
+    max_workers = min(len(candidates), 10)
+    print(f"[Repo Grader] Grading {len(candidates)} repos in parallel with {max_workers} worker(s)...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(run_repo_grader_agent, candidate, topic, token): candidate
+            for candidate in candidates
+        }
+        for index, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+            candidate = futures[future]
+            print(f"\n[{index}/{len(candidates)}] {candidate.get('name', 'unknown')}")
+            try:
+                graded_repos.append(future.result())
+            except Exception as exc:
+                print(f"[Repo Grader] Skipping {candidate.get('name', 'unknown')} after grading failure: {exc}")
 
     if not graded_repos:
         raise RuntimeError("Repo Grader returned no usable repository assessments.")
@@ -139,8 +148,6 @@ def main():
     output_dir = Path("paper_runs/latest")
     state = PipelineState(output_dir)
     state.set_metadata("topic", topic)
-
-    run_repo_selection(topic, state)
 
     print("\n--- PI Agent ---")
     pi_output = run_pi_agent(topic)
@@ -179,10 +186,18 @@ def main():
     state.write_stage_output("research_question", selected_question)
     print(f"\nSelected research question:\n{selected_question}")
 
-    print("\n--- Deep Literature Agent (Part 2) ---")
-    deep_lit_output = run_deep_literature_stage(selected_question)
+    print("\n--- Proposal Preparation: Deep Literature + Repo Pipeline ---")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        deep_lit_future = executor.submit(run_deep_literature_stage, selected_question)
+        repo_future = executor.submit(run_repo_selection, selected_question, state)
+
+        deep_lit_output = deep_lit_future.result()
+        selected_repo = repo_future.result()
+
     state.write_stage_output("deep_literature", deep_lit_output)
+    print("\n--- Deep Literature Agent (Part 2) ---")
     print(deep_lit_output)
+    print(f"\nRepo selected for proposal: {selected_repo.get('name')} ({selected_repo.get('url')})")
 
     print("\n--- Proposal Agent ---")
     proposal_output = run_proposal_stage(selected_question, deep_lit_output)
