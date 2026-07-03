@@ -5,8 +5,10 @@ except ImportError:
 
 try:
     from backend.config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+    from backend.agent_api import call_agent_api
 except ImportError:
     from config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
+    from agent_api import call_agent_api
 
 import requests
 import json
@@ -359,34 +361,14 @@ SELECTED BENCHMARK CONTEXT:
 
 You are conducting a literature review to support a benchmark-oriented study using the selected repository. Focus the synthesis and gap analysis on literature directly relevant to the repository's domain, public dataset resources, benchmark workflow, methods, and measurable evaluation metrics. Do not assume the study is about MNIST, CNNs, or PyTorch unless the selected repository context explicitly implies that.
 """
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}",
-        "X-Principal-Id": PRINCIPAL_ID
-    }
-    body = {
-        "agentId": AGENT_ID,
-        "userInput": (
-            anchor_context
-            + LITERATURE_SYSTEM_PROMPT
-            + f"\n\nResearch topic: {topic}"
-            + f"\n\nPapers retrieved:\n{papers_text}"
-            + "\n\nIMPORTANT: Begin your response immediately with 'SUMMARY OF EXISTING WORK:'. Do not write any introductory sentences or explain what you are about to do."
-        ),
-        "maxTokens": 8000
-    }
-    if SEND_MODEL_TO_AGENT_API and MODEL:
-        body["model"] = MODEL
-
-    response = requests.post(
-        f"{BASE_URL}/api/agent/run/async",
-        headers=headers,
-        json=body
+    prompt = (
+        anchor_context
+        + LITERATURE_SYSTEM_PROMPT
+        + f"\n\nResearch topic: {topic}"
+        + f"\n\nPapers retrieved:\n{papers_text}"
+        + "\n\nIMPORTANT: Begin your response immediately with 'SUMMARY OF EXISTING WORK:'. Do not write any introductory sentences or explain what you are about to do."
     )
-    data = response.json()
-    request_id = data["data"]["requestId"]
-    print("Got requestId:", request_id)
-    result = get_response(request_id)
+    result = call_agent_api(prompt, "Literature")
     return replace_numeric_citation_markers(result, citation_lookup_from_papers_text(papers_text))
 
 

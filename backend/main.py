@@ -148,8 +148,20 @@ def main():
     print(pi_output)
 
     print("\n--- Literature Agent (Part 1) ---")
-    lit_output = run_literature_stage(pi_output, topic)
-    state.write_stage_output("literature", lit_output)
+    try:
+        lit_output = run_literature_stage(pi_output, topic)
+        literature_status = "generated"
+    except Exception as exc:
+        print(f"Literature failed; using placeholder. Reason: {exc}")
+        lit_output = (
+            "SUMMARY OF EXISTING WORK:\n"
+            "Literature review could not be generated because the external agent API was unavailable.\n\n"
+            "GAPS:\n"
+            "1. Retry the literature stage when the agent API/network is available.\n"
+            "2. Treat downstream research questions as provisional until literature synthesis is regenerated.\n"
+        )
+        literature_status = "placeholder"
+    state.write_stage_output("literature", lit_output, status=literature_status)
     print(lit_output)
 
     print("\n--- Research Question Agent ---")
