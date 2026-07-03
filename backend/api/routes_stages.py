@@ -157,6 +157,9 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         repos = run_repo_finder_agent(question)
         if not repos:
             raise RuntimeError("Repo finder returned no candidates.")
+        state.set_metadata("repo_candidates", repos)
+        log(f"[Proposal Stage] Repo finder returned {len(repos)} candidate(s).")
+
         selected_repo = run_repo_assessor_agent(repos, question)
         if not selected_repo:
             raise RuntimeError("Repo assessor could not select a repo.")
@@ -168,6 +171,7 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         )
         state.set_metadata("selected_repo_name", selected_repo["name"])
         state.set_metadata("selected_repo_url", selected_repo["url"])
+        state.set_metadata("selected_repo_reason", selected_repo.get("reason", selected_repo.get("overall_assessment", "")))
 
         log(f"[Proposal Stage] Selected repo: {selected_repo['name']}. Generating proposal...")
         output = run_proposal_stage(question, deep_literature)

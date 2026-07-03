@@ -9,6 +9,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
   const [done, setDone] = useState(!!proposalOutput);
   const [error, setError] = useState("");
   const [progressLines, setProgressLines] = useState([]);
+  const [repoInfo, setRepoInfo] = useState(null);
   const abortControllerRef = useRef(null);
   const progressIntervalRef = useRef(null);
   const progressBottomRef = useRef(null);
@@ -25,21 +26,58 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
     setDone(!!proposalOutput);
   }, [proposalOutput]);
 
+  function updateRepoInfoFromState(state) {
+    const metadata = state?.metadata || {};
+    const name = metadata.selected_repo_name || metadata.selected_repo_id;
+    const url = metadata.selected_repo_url;
+    const reason = metadata.selected_repo_reason;
+    const candidates = metadata.repo_candidates || [];
+    const grades = metadata.repo_grades || [];
+
+    if (name || url || candidates.length || grades.length) {
+      setRepoInfo({ name, url, reason, candidates, grades });
+    }
+  }
+
+  async function fetchProgressLines() {
+    try {
+      const r = await fetch("http://localhost:8000/api/progress");
+      const data = await r.json();
+      const lines = data.lines || [];
+      setProgressLines((previous) => (lines.length > 0 ? lines : running ? previous : []));
+    } catch {}
+  }
+
+  async function fetchRunState() {
+    try {
+      const r = await fetch("http://localhost:8000/api/runs/latest");
+      const state = await r.json();
+      updateRepoInfoFromState(state);
+    } catch {}
+  }
+
   useEffect(() => {
     if (running) {
-      setProgressLines([]);
-      progressIntervalRef.current = setInterval(async () => {
-        try {
-          const r = await fetch("http://localhost:8000/api/progress");
-          const data = await r.json();
-          setProgressLines(data.lines || []);
-        } catch {}
-      }, 2000);
+      setProgressLines(["[Proposal Stage] Starting repo pipeline..."]);
+      setRepoInfo(null);
+      fetchProgressLines();
+      fetchRunState();
+      progressIntervalRef.current = setInterval(() => {
+        fetchProgressLines();
+        fetchRunState();
+      }, 750);
     } else {
       clearInterval(progressIntervalRef.current);
     }
     return () => clearInterval(progressIntervalRef.current);
   }, [running]);
+
+  useEffect(() => {
+    if (!running && (done || proposalOutput)) {
+      fetchProgressLines();
+      fetchRunState();
+    }
+  }, [done, proposalOutput, running]);
 
   useEffect(() => {
     if (progressBottomRef.current) {
@@ -56,7 +94,8 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
     setDone(false);
     setRunning(true);
     setError("");
-    setProgressLines([]);
+    setProgressLines(["[Proposal Stage] Starting repo pipeline..."]);
+    setRepoInfo(null);
 
     try {
       const response = await fetch("http://localhost:8000/api/stages/proposal/run", {
@@ -71,6 +110,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
       const data = await response.json();
+      updateRepoInfoFromState(data.state);
       const fullOutput = data.output || "";
       setOutput(fullOutput);
       onComplete(fullOutput);
@@ -149,7 +189,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
         )}
       </div>
 
-      {(running || progressLines.length > 0) && (
+      {(running || done || progressLines.length > 0 || repoInfo) && (
         <div style={{
           width: "300px",
           flexShrink: 0,
@@ -165,8 +205,62 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
           top: "24px",
         }}>
           <div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: "12px", fontSize: "12px" }}>
-            Pipeline Progress
+            Repo Pipeline
           </div>
+          {done && !running && (
+            <div style={{ color: "#68d391", marginBottom: "8px" }}>● Proposal complete</div>
+          )}
+          {repoInfo && (
+            <div style={{
+              borderBottom: "1px solid rgba(160, 174, 192, 0.2)",
+              marginBottom: "12px",
+              paddingBottom: "12px",
+              lineHeight: "1.5",
+            }}>
+              <div style={{ color: "#e2e8f0", fontWeight: 600 }}>Selected Repo</div>
+              <div style={{ color: "#68d391", wordBreak: "break-word" }}>
+                {repoInfo.name || "Selected repository"}
+              </div>
+              {repoInfo.url && (
+                <a href={repoInfo.url} target="_blank" rel="noreferrer" style={{ color: "#63b3ed", wordBreak: "break-word" }}>
+                  {repoInfo.url}
+                </a>
+              )}
+              {repoInfo.reason && (
+                <div style={{ color: "#a0aec0", marginTop: "6px" }}>{repoInfo.reason}</div>
+              )}
+              {repoInfo.candidates?.length > 0 && (
+                <div style={{ color: "#a0aec0", marginTop: "6px" }}>
+                  Candidates found: {repoInfo.candidates.length}
+                </div>
+              )}
+              {repoInfo.grades?.length > 0 && (
+                <div style={{ color: "#a0aec0" }}>
+                  Repos graded: {repoInfo.grades.length}
+                </div>
+              )}
+              {repoInfo.candidates?.length > 0 && (
+                <div style={{ marginTop: "10px" }}>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: "4px" }}>10 Candidates</div>
+                  {repoInfo.candidates.slice(0, 10).map((candidate, index) => (
+                    <div key={`${candidate.name || candidate.repo || candidate.url || index}`} style={{
+                      color: "#a0aec0",
+                      lineHeight: "1.5",
+                      overflowWrap: "anywhere",
+                    }}>
+                      {index + 1}. {candidate.name || candidate.repo || candidate.url || "Unnamed repo"}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {progressLines.length === 0 && running && (
+            <div style={{ color: "#63b3ed", lineHeight: "1.5" }}>Waiting for the first repo pipeline update...</div>
+          )}
+          {progressLines.length === 0 && !running && !repoInfo && (
+            <div style={{ color: "#a0aec0", lineHeight: "1.5" }}>No repo pipeline log is available yet.</div>
+          )}
           {progressLines.map((line, i) => (
             <div key={i} style={{
               marginBottom: "4px",
