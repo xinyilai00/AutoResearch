@@ -379,7 +379,7 @@ SELECTED BENCHMARK CONTEXT:
 - Repository URL: {anchor['repo_url']}
 - Hypothesis: {anchor['hypothesis']}
 
-You are conducting a literature review to support a benchmark-oriented study using the selected repository. Focus the synthesis and gap analysis on literature directly relevant to the repository's domain, public dataset resources, benchmark workflow, methods, and measurable evaluation metrics. Do not assume the study is about MNIST, CNNs, or PyTorch unless the selected repository context explicitly implies that.
+You are conducting a literature review to support a benchmark-oriented study using the selected repository. Focus the synthesis and gap analysis on literature directly relevant to the selected repository's domain, public dataset resources, benchmark workflow, methods, and measurable evaluation metrics. Do not assume any specific dataset, model family, framework, or task unless the selected repository context explicitly implies it.
 """
     prompt = (
         anchor_context
