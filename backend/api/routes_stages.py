@@ -107,8 +107,13 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         pi_output = request.pi_output or state.read_active_output("pi")
         if not topic or not pi_output:
             raise ValueError("Literature stage requires topic and PI output.")
+        state.set_metadata("literature_citations", [])
         try:
-            output = run_literature_stage(pi_output, topic)
+            output = run_literature_stage(
+                pi_output,
+                topic,
+                citation_callback=lambda links: state.set_metadata("literature_citations", links),
+            )
         except Exception as e:
             print(f"DEBUG LITERATURE ERROR: {e}")
             raise
@@ -136,8 +141,12 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         question = request.research_question or state.read_active_output("research_question")
         if not question:
             raise ValueError("Deep Literature stage requires research_question.")
+        state.set_metadata("deep_literature_citations", [])
         try:
-            output = run_deep_literature_stage(question)
+            output = run_deep_literature_stage(
+                question,
+                citation_callback=lambda links: state.set_metadata("deep_literature_citations", links),
+            )
         except Exception as e:
             print(f"DEBUG DEEP LITERATURE ERROR: {e}")
             raise

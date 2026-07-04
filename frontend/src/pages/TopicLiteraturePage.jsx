@@ -27,6 +27,7 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
     setDone(!!litOutput);
   }, [topic, litOutput]);
 
+
   async function handleRun(feedback = null) {
     if (!localTopic.trim()) return;
 

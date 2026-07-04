@@ -8,6 +8,8 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!deepLitOutput);
   const [error, setError] = useState("");
+  const [citationLinks, setCitationLinks] = useState([]);
+  const citationIntervalRef = useRef(null);
   const abortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -15,6 +17,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      clearInterval(citationIntervalRef.current);
     };
   }, []);
 
@@ -22,6 +25,31 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
     setOutput(deepLitOutput || "");
     setDone(!!deepLitOutput);
   }, [deepLitOutput]);
+
+
+  async function fetchCitationLinks() {
+    try {
+      const response = await fetch("http://localhost:8000/api/runs/latest");
+      const state = await response.json();
+      setCitationLinks(state?.metadata?.deep_literature_citations || []);
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (running) {
+      fetchCitationLinks();
+      citationIntervalRef.current = setInterval(fetchCitationLinks, 750);
+    } else {
+      clearInterval(citationIntervalRef.current);
+    }
+    return () => clearInterval(citationIntervalRef.current);
+  }, [running]);
+
+  useEffect(() => {
+    if (!running && (done || deepLitOutput)) {
+      fetchCitationLinks();
+    }
+  }, [done, deepLitOutput, running]);
 
   async function handleRun(feedback = null) {
     if (abortControllerRef.current) {
@@ -34,6 +62,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
     setDone(false);
     setRunning(true);
     setError("");
+    setCitationLinks([]);
 
     try {
       const response = await fetch("http://localhost:8000/api/stages/deep_literature/run", {
@@ -49,6 +78,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
       setOutput(fullOutput);
       onComplete(fullOutput);
       setDone(true);
+      fetchCitationLinks();
     } catch (err) {
       if (err.name === "AbortError") {
         setRunning(false);
@@ -68,7 +98,8 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
   }, [done, autonomous]);
 
   return (
-    <div className="stage-page">
+    <div style={{ display: "flex", gap: "24px", alignItems: "flex-start" }}>
+      <div className="stage-page" style={{ flex: 1, minWidth: 0 }}>
       <h1>Literature Review</h1>
       <p>Conducts a targeted literature review focused on your selected research question.</p>
 
@@ -120,6 +151,55 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
 
       {done && autonomous && (
         <p className="auto-note">Autonomous mode — continuing automatically...</p>
+      )}
+      </div>
+
+      {(running || done || citationLinks.length > 0) && (
+        <div style={{
+          width: "300px",
+          flexShrink: 0,
+          background: "#1a1a2e",
+          borderRadius: "12px",
+          padding: "16px",
+          fontFamily: "monospace",
+          fontSize: "11px",
+          color: "#a0aec0",
+          overflowY: "auto",
+          maxHeight: "80vh",
+          position: "sticky",
+          top: "24px",
+        }}>
+          <div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: "12px", fontSize: "12px" }}>
+            Literature Citations
+          </div>
+          {running && citationLinks.length === 0 && (
+            <div style={{ color: "#63b3ed", lineHeight: "1.5" }}>Searching citation sources...</div>
+          )}
+          {done && !running && (
+            <div style={{ color: "#68d391", marginBottom: "8px" }}>● Literature complete</div>
+          )}
+          {citationLinks.length === 0 && !running && (
+            <div style={{ color: "#a0aec0", lineHeight: "1.5" }}>No citation links are available yet.</div>
+          )}
+          {citationLinks.map((citation, index) => (
+            <div key={`${citation.url || citation.title || index}`} style={{
+              borderBottom: "1px solid rgba(160, 174, 192, 0.18)",
+              marginBottom: "10px",
+              paddingBottom: "10px",
+              lineHeight: "1.45",
+            }}>
+              <div style={{ color: "#e2e8f0", fontWeight: 600, overflowWrap: "anywhere" }}>
+                {index + 1}. {citation.citation || citation.title || "Citation"}
+              </div>
+              <a href={citation.url} target="_blank" rel="noreferrer" style={{ color: "#63b3ed", overflowWrap: "anywhere" }}>
+                {citation.title || citation.url}
+              </a>
+              <div style={{ color: "#a0aec0", marginTop: "4px" }}>
+                {[citation.source, citation.year].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

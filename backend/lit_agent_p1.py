@@ -106,7 +106,7 @@ def search_semantic_scholar(query: str, limit: int = 10) -> list[dict]:
     try:
         response = requests.get(
             "https://api.semanticscholar.org/graph/v1/paper/search",
-            params={"query": query, "limit": limit, "fields": "title,abstract,year,authors,citationCount"},
+            params={"query": query, "limit": limit, "fields": "title,abstract,year,authors,citationCount,url"},
             timeout=10
         )
         data = response.json()
@@ -119,7 +119,8 @@ def search_semantic_scholar(query: str, limit: int = 10) -> list[dict]:
                     "year": p.get("year", ""),
                     "authors": [a["name"] for a in p.get("authors", [])[:3]],
                     "citations": p.get("citationCount", 0),
-                    "source": "Semantic Scholar"
+                    "source": "Semantic Scholar",
+                    "url": p.get("url", "")
                 })
         return papers
     except Exception as e:
@@ -157,7 +158,8 @@ def search_arxiv(query: str, limit: int = 10) -> list[dict]:
                     "year": entry.findtext("atom:published", "", ns)[:4],
                     "authors": [a.findtext("atom:name", "", ns) for a in entry.findall("atom:author", ns)[:3]],
                     "citations": None,
-                    "source": "arXiv"
+                    "source": "arXiv",
+                    "url": entry.findtext("atom:id", "", ns).strip()
                 })
         return papers
     except Exception as e:
@@ -169,7 +171,7 @@ def search_openalex(query: str, limit: int = 10) -> list[dict]:
     try:
         response = requests.get(
             "https://api.openalex.org/works",
-            params={"search": query, "per-page": limit, "select": "title,abstract_inverted_index,publication_year,authorships,cited_by_count"},
+            params={"search": query, "per-page": limit, "select": "id,doi,title,abstract_inverted_index,publication_year,authorships,cited_by_count"},
             headers={"User-Agent": "AutoResearch/1.0 (research pipeline)"},
             timeout=10
         )
@@ -190,7 +192,8 @@ def search_openalex(query: str, limit: int = 10) -> list[dict]:
                 "year": p.get("publication_year", ""),
                 "authors": [a["author"]["display_name"] for a in p.get("authorships", [])[:3] if a.get("author")],
                 "citations": p.get("cited_by_count", 0),
-                "source": "OpenAlex"
+                "source": "OpenAlex",
+                "url": f"https://doi.org/{p.get('doi')}" if p.get("doi") else p.get("id", "")
             })
         return papers
     except Exception as e:
@@ -278,6 +281,23 @@ def format_papers_for_llm(papers: list[dict], max_papers: int = 30) -> str:
             f"Abstract: {p['abstract'][:400]}...\n"
         )
     return "\n".join(lines)
+
+
+def citation_links_from_papers(papers: list[dict], max_papers: int = 30) -> list[dict]:
+    papers_sorted = sorted(papers, key=lambda p: (p.get("citations") or 0), reverse=True)[:max_papers]
+    links = []
+    for paper in papers_sorted:
+        url = str(paper.get("url") or "").strip()
+        if not url:
+            continue
+        links.append({
+            "citation": author_year_label(paper),
+            "title": str(paper.get("title") or "Untitled"),
+            "url": url,
+            "source": str(paper.get("source") or "Unknown"),
+            "year": paper.get("year") or "",
+        })
+    return links
 
 
 def citation_lookup_from_papers_text(papers_text: str) -> dict[str, str]:
@@ -376,7 +396,7 @@ You are conducting a literature review to support a benchmark-oriented study usi
 # MAIN
 # ─────────────────────────────────────────────
 
-def run_literature_stage(pi_output: str, original_topic: str) -> str:
+def run_literature_stage(pi_output: str, original_topic: str, citation_callback=None) -> str:
     print("\n[Literature Agent] Parsing PI output...")
     parsed = parse_pi_output(pi_output)
     print(f"  Primary query: {parsed['primary']}")
@@ -384,6 +404,10 @@ def run_literature_stage(pi_output: str, original_topic: str) -> str:
 
     print("\n[Literature Agent] Searching academic databases...")
     papers = run_all_searches(parsed)
+
+    citation_links = citation_links_from_papers(papers)
+    if citation_callback:
+        citation_callback(citation_links)
 
     print("\n[Literature Agent] Sending to Dianjin for gap analysis...")
     papers_text = format_papers_for_llm(papers)

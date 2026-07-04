@@ -7,6 +7,7 @@ import requests
 import json
 import re
 import time
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DEEP_LITERATURE_SYSTEM_PROMPT = """
@@ -90,7 +91,7 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[dict]:
             params={
                 "query": query,
                 "limit": limit,
-                "fields": "title,abstract,year,authors,citationCount"
+                "fields": "title,abstract,year,authors,citationCount,url"
             },
             timeout=10
         )
@@ -104,7 +105,8 @@ def search_semantic_scholar(query: str, limit: int = 15) -> list[dict]:
                     "year": p.get("year", ""),
                     "authors": [a["name"] for a in p.get("authors", [])[:3]],
                     "citations": p.get("citationCount", 0),
-                    "source": "Semantic Scholar"
+                    "source": "Semantic Scholar",
+                    "url": p.get("url", "")
                 })
         return papers
     except Exception as e:
@@ -153,7 +155,8 @@ def search_arxiv(query: str, limit: int = 15) -> list[dict]:
                         for a in entry.findall("atom:author", ns)[:3]
                     ],
                     "citations": None,
-                    "source": "arXiv"
+                    "source": "arXiv",
+                    "url": entry.findtext("atom:id", "", ns).strip()
                 })
         return papers
     except Exception as e:
@@ -168,7 +171,7 @@ def search_openalex(query: str, limit: int = 15) -> list[dict]:
             params={
                 "search": query,
                 "per-page": limit,
-                "select": "title,abstract_inverted_index,publication_year,authorships,cited_by_count"
+                "select": "id,doi,title,abstract_inverted_index,publication_year,authorships,cited_by_count"
             },
             headers={"User-Agent": "AutoResearch/1.0 (research pipeline)"},
             timeout=10
@@ -195,13 +198,61 @@ def search_openalex(query: str, limit: int = 15) -> list[dict]:
                     if a.get("author")
                 ],
                 "citations": p.get("cited_by_count", 0),
-                "source": "OpenAlex"
+                "source": "OpenAlex",
+                "url": normalize_doi_url(p.get("doi")) or fallback_paper_url(p.get("title", ""), p.get("id", ""))
             })
         return papers
     except Exception as e:
         print(f"OpenAlex error: {e}")
         return []
 
+
+
+
+def normalize_doi_url(doi: str | None) -> str:
+    value = str(doi or "").strip()
+    if not value:
+        return ""
+    if value.startswith("https://doi.org/"):
+        return value
+    return f"https://doi.org/{value}"
+
+
+def fallback_paper_url(title: str, source_id: str = "") -> str:
+    if source_id:
+        return source_id
+    if not title:
+        return ""
+    return f"https://scholar.google.com/scholar?q={quote(title)}"
+
+
+def query_terms(query: str) -> set[str]:
+    stopwords = {
+        "the", "and", "for", "from", "with", "that", "this", "what", "when",
+        "where", "which", "into", "can", "are", "how", "does", "using", "use",
+        "over", "under", "between", "across", "study", "question", "effect",
+    }
+    cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", query.lower()).replace("-", " ")
+    return {word for word in cleaned.split() if len(word) > 2 and word not in stopwords}
+
+
+def relevance_score(paper: dict, query: str) -> tuple[int, int, int]:
+    terms = query_terms(query)
+    title = str(paper.get("title") or "").lower().replace("-", " ")
+    abstract = str(paper.get("abstract") or "").lower().replace("-", " ")
+    title_hits = sum(1 for term in terms if term in title)
+    abstract_hits = sum(1 for term in terms if term in abstract)
+    citations = int(paper.get("citations") or 0)
+    return title_hits * 5 + abstract_hits, title_hits, citations
+
+
+def rank_papers_for_question(papers: list[dict], research_question: str, max_papers: int = 30) -> list[dict]:
+    ranked = sorted(
+        papers,
+        key=lambda paper: relevance_score(paper, research_question),
+        reverse=True,
+    )
+    return ranked[:max_papers]
 
 # ─────────────────────────────────────────────
 # SEARCH ORCHESTRATION
@@ -283,12 +334,12 @@ def author_year_label(paper: dict) -> str:
     return f"{first_surname} et al., {year}"
 
 
-def format_papers_for_llm(papers: list[dict], max_papers: int = 30) -> str:
-    papers_sorted = sorted(
-        papers,
-        key=lambda p: (p.get("citations") or 0),
-        reverse=True
-    )[:max_papers]
+def format_papers_for_llm(papers: list[dict], max_papers: int = 30, research_question: str = "") -> str:
+    papers_sorted = (
+        rank_papers_for_question(papers, research_question, max_papers)
+        if research_question
+        else sorted(papers, key=lambda p: (p.get("citations") or 0), reverse=True)[:max_papers]
+    )
 
     lines = []
     for p in papers_sorted:
@@ -300,6 +351,27 @@ def format_papers_for_llm(papers: list[dict], max_papers: int = 30) -> str:
             f"Abstract: {p['abstract'][:400]}...\n"
         )
     return "\n".join(lines)
+
+
+def citation_links_from_papers(papers: list[dict], max_papers: int = 30, research_question: str = "") -> list[dict]:
+    papers_sorted = (
+        rank_papers_for_question(papers, research_question, max_papers)
+        if research_question
+        else sorted(papers, key=lambda p: (p.get("citations") or 0), reverse=True)[:max_papers]
+    )
+    links = []
+    for paper in papers_sorted:
+        url = str(paper.get("url") or "").strip()
+        if not url:
+            continue
+        links.append({
+            "citation": author_year_label(paper),
+            "title": str(paper.get("title") or "Untitled"),
+            "url": url,
+            "source": str(paper.get("source") or "Unknown"),
+            "year": paper.get("year") or "",
+        })
+    return links
 
 
 def citation_lookup_from_papers_text(papers_text: str) -> dict[str, str]:
@@ -417,12 +489,16 @@ def run_deep_literature_agent(papers_text: str, research_question: str) -> str:
 # MAIN
 # ─────────────────────────────────────────────
 
-def run_deep_literature_stage(research_question: str) -> str:
+def run_deep_literature_stage(research_question: str, citation_callback=None) -> str:
     print("\n[Deep Literature Agent] Searching for targeted papers...")
     papers = run_deep_searches(research_question)
 
+    citation_links = citation_links_from_papers(papers, research_question=research_question)
+    if citation_callback:
+        citation_callback(citation_links)
+
     print("\n[Deep Literature Agent] Sending to Dianjin for deep review...")
-    papers_text = format_papers_for_llm(papers)
+    papers_text = format_papers_for_llm(papers, research_question=research_question)
     result = run_deep_literature_agent(papers_text, research_question)
 
     return result
