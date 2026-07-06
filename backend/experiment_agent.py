@@ -27,6 +27,9 @@ MAX_ATTEMPTS = 5
 
 REVISION_PROMPT = """You are a research engineer. A previous attempt to run an experiment failed.
 
+CRITICAL: You are working ONLY with this specific repository: __REPO_URL__
+Do NOT reference any other repository, file, or codebase. Every fix must be grounded in this repo's actual structure and files.
+
 RULES:
 - Reply with JSON only. No explanation, no markdown fences, no preamble.
 - Use the same schema as before, plus an additional field: file_patches.
@@ -243,9 +246,11 @@ def verify_script_uses_repo(script: str, repo_name: str) -> tuple[bool, str]:
     return False, f"Script does not appear to use the actual repository's code (expected references to '{package_hint}' or 'nab' package, found none). This may be a fabricated/generic script."
 
 
-def revise_setup_after_failure(previous_setup: dict, stdout: str, stderr: str) -> dict:
+def revise_setup_after_failure(previous_setup: dict, stdout: str, stderr: str, repo_url: str = "", repo_name: str = "") -> dict:
     error_output = f"STDOUT:\n{stdout[-2000:]}\n\nSTDERR:\n{stderr[-2000:]}"
     prompt = REVISION_PROMPT.replace(
+        "__REPO_URL__", repo_url or "unknown"
+    ).replace(
         "__PREVIOUS_SETUP__", json.dumps(previous_setup, indent=2)
     ).replace(
         "__ERROR_OUTPUT__", error_output
@@ -450,7 +455,7 @@ def run_experiment_stage(
         print(f"[Experiment Agent] Stderr tail: {stderr[-300:]}")
         if attempt < MAX_ATTEMPTS:
             print("[Experiment Agent] Asking agent to revise setup based on error...")
-            setup = revise_setup_after_failure(setup, stdout, stderr)
+            setup = revise_setup_after_failure(setup, stdout, stderr, repo_url=repo_url, repo_name=repo_name)
             expected_metric = setup.get("expected_metric", expected_metric)       
 
     elapsed = time.time() - start_time

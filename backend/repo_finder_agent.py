@@ -145,7 +145,7 @@ def fetch_readme(repo_name: str) -> str:
         if r.status_code == 200:
             content = r.json().get("content", "")
             decoded = base64.b64decode(content).decode("utf-8", errors="replace")
-            return decoded[:1000]
+            return decoded[:500]
     except Exception:
         pass
     return ""

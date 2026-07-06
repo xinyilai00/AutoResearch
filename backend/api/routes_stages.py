@@ -163,6 +163,10 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         from backend.progress import log, clear
         clear()
         log("[Proposal Stage] Starting repo search...")
+        state.set_metadata("repo_candidates", [])
+        state.set_metadata("selected_repo_name", None)
+        state.set_metadata("selected_repo_url", None)
+        state.set_metadata("selected_repo_reason", None)
         repos = run_repo_finder_agent(question)
         if not repos:
             raise RuntimeError("Repo finder returned no candidates.")
