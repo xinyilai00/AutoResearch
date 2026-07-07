@@ -206,6 +206,22 @@ def install_packages(venv_python: Path, venv_pip: Path, packages: list[str]) -> 
                 print(f"[Experiment Agent] Warning: could not install {package}: {stderr[:200]}")
 
 
+def validate_colab_executor_url(colab_url: str) -> str:
+    normalized = (colab_url or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    if "colab.research.google.com" in normalized:
+        return (
+            "COLAB_EXECUTOR_URL points to a Colab notebook page. The experiment agent needs "
+            "the public HTTP executor URL created by the notebook, such as an ngrok/cloudflared URL "
+            "that accepts POST /execute. Open the notebook, start its executor server, then copy that "
+            "public URL into COLAB_EXECUTOR_URL."
+        )
+    if not normalized.startswith(("http://", "https://")):
+        return "COLAB_EXECUTOR_URL must start with http:// or https://."
+    return ""
+
+
 def run_script_file(venv_python: Path, script: str, cwd: Path, timeout: int = 1800) -> tuple[int, str, str]:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(script)
@@ -285,31 +301,6 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
     data_setup_commands = setup.get("data_setup_commands", [])
     file_patches = setup.get("file_patches", [])
 
-    install_packages(venv_python, venv_pip, install_commands)
-
-    if file_patches:
-        print(f"[Experiment Agent] Applying {len(file_patches)} file patch(es)...")
-        apply_file_patches(file_patches)
-
-    if (CLONE_DIR / "setup.py").exists() or (CLONE_DIR / "pyproject.toml").exists():
-        print("[Experiment Agent] Installing repo package...")
-        run_command([str(venv_pip), "install", "-e", "."], cwd=CLONE_DIR, timeout=300)
-
-    if COLAB_EXECUTOR_URL:
-        print(f"[Experiment Agent] Colab executor configured — data setup will run on Colab, not locally.")
-    else:
-        for cmd in data_setup_commands:
-            cmd = cmd.strip()
-            if not cmd:
-                continue
-            print(f"[Experiment Agent] Data setup: {cmd}")
-            result = subprocess.run(
-                cmd, cwd=CLONE_DIR, shell=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600
-            )
-            if result.returncode != 0:
-                print(f"[Experiment Agent] Data setup warning: {result.stderr[:200]}")
-
     if not run_script_str:
         return -1, "", "No run script provided in setup."
 
@@ -323,13 +314,47 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
         print(f"[Experiment Agent] WARNING: {repo_warning}")
         return -1, "", f"SCRIPT VALIDATION FAILED: {repo_warning}"
 
+    if COLAB_EXECUTOR_URL:
+        colab_url_error = validate_colab_executor_url(COLAB_EXECUTOR_URL)
+        if colab_url_error:
+            return -1, "", colab_url_error
+        print("[Experiment Agent] Colab executor configured; skipping local dependency install and repo package install.")
+        print("[Experiment Agent] Sending script to Colab executor...")
+        return run_script_on_colab(
+            run_script_str,
+            install_commands,
+            COLAB_EXECUTOR_URL,
+            repo_url=repo_url,
+            repo_name=repo_name,
+            data_setup_commands=data_setup_commands,
+            file_patches=file_patches,
+        )
+
+    install_packages(venv_python, venv_pip, install_commands)
+
+    if file_patches:
+        print(f"[Experiment Agent] Applying {len(file_patches)} file patch(es)...")
+        apply_file_patches(file_patches)
+
+    if (CLONE_DIR / "setup.py").exists() or (CLONE_DIR / "pyproject.toml").exists():
+        print("[Experiment Agent] Installing repo package...")
+        run_command([str(venv_pip), "install", "-e", "."], cwd=CLONE_DIR, timeout=300)
+
+    for cmd in data_setup_commands:
+        cmd = cmd.strip()
+        if not cmd:
+            continue
+        print(f"[Experiment Agent] Data setup: {cmd}")
+        result = subprocess.run(
+            cmd, cwd=CLONE_DIR, shell=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600
+        )
+        if result.returncode != 0:
+            print(f"[Experiment Agent] Data setup warning: {result.stderr[:200]}")
+
     print("[Experiment Agent] Running experiment script...")
     before_snapshot = snapshot_repo_files()
-    if COLAB_EXECUTOR_URL:
-        print(f"[Experiment Agent] Sending script to Colab executor...")
-        returncode, stdout, stderr = run_script_on_colab(run_script_str, install_commands, COLAB_EXECUTOR_URL, repo_url=repo_url, data_setup_commands=data_setup_commands)
-    else:
-        returncode, stdout, stderr = run_script_file(venv_python, run_script_str, CLONE_DIR)
+    returncode, stdout, stderr = run_script_file(venv_python, run_script_str, CLONE_DIR)
     after_snapshot = snapshot_repo_files()
     changed_files = diff_snapshots(before_snapshot, after_snapshot)
     pre_existing_files = list(before_snapshot.keys())
@@ -340,7 +365,6 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
         + "\n".join(pre_existing_files[:100])
     )
     return returncode, stdout, stderr
-
 
 def parse_results_with_llm(stdout: str, stderr: str, repo_url: str, expected_metric: str) -> str:
     result_lines = "\n".join(line for line in stdout.split("\n") if line.strip().startswith("RESULT:"))
@@ -370,15 +394,25 @@ def parse_results_with_llm(stdout: str, stderr: str, repo_url: str, expected_met
         agent_id=JSON_AGENT_ID,
     )
 
-def run_script_on_colab(script: str, install_commands: list[str], colab_url: str, repo_url: str = "", data_setup_commands: list[str] | None = None) -> tuple[int, str, str]:
+def run_script_on_colab(
+    script: str,
+    install_commands: list[str],
+    colab_url: str,
+    repo_url: str = "",
+    repo_name: str = "",
+    data_setup_commands: list[str] | None = None,
+    file_patches: list[dict] | None = None,
+) -> tuple[int, str, str]:
     try:
         response = http_requests.post(
-            f"{colab_url}/execute",
+            f"{colab_url.strip().rstrip('/')}/execute",
             json={
                 "install_commands": install_commands,
                 "script": script,
                 "repo_url": repo_url,
+                "repo_name": repo_name,
                 "setup_commands": data_setup_commands or [],
+                "file_patches": file_patches or [],
             },
             timeout=1800
         )
@@ -393,6 +427,11 @@ def run_experiment_stage(
     output_dir: str | Path = "paper_runs/latest/experiment",
 ) -> str:
     print("\n[Experiment Agent] Starting experiment...")
+    try:
+        from backend.config import COLAB_EXECUTOR_URL
+    except ImportError:
+        from config import COLAB_EXECUTOR_URL
+
     anchor = get_experiment_anchor()
     proposal_text = read_text_or_path(proposal_input)
     output_path = Path(output_dir)
@@ -401,37 +440,46 @@ def run_experiment_stage(
     repo_url = anchor["repo_url"]
     repo_name = anchor.get("repo_name", "")
     hypothesis = anchor["hypothesis"]
+    use_colab = bool(COLAB_EXECUTOR_URL)
 
-    # Clone
-    if CLONE_DIR.exists():
-        print("[Experiment Agent] Removing previous clone...")
-        shutil.rmtree(CLONE_DIR)
-
-    print(f"[Experiment Agent] Cloning {repo_url}...")
-    CLONE_DIR.parent.mkdir(parents=True, exist_ok=True)
-    returncode, stdout, stderr = run_command(
-        ["git", "clone", "--depth", "1", repo_url, str(CLONE_DIR)],
-        cwd=Path("."),
-        timeout=600,
-    )
-    if returncode != 0:
-        return f"# Experiment Failed\n\nFailed to clone repository.\n\nError:\n```\n{stderr}\n```"
-
-    # Venv
-    venv_python = VENV_DIR / "bin" / "python"
-    venv_pip = VENV_DIR / "bin" / "pip"
-
-    if venv_python.exists():
-        print("[Experiment Agent] Reusing existing virtual environment.")
+    if use_colab:
+        colab_url_error = validate_colab_executor_url(COLAB_EXECUTOR_URL)
+        if colab_url_error:
+            return f"# Experiment Failed\n\n{colab_url_error}"
+        print("[Experiment Agent] Colab executor configured; skipping local clone and local virtual environment.")
+        venv_python = VENV_DIR / "bin" / "python"
+        venv_pip = VENV_DIR / "bin" / "pip"
     else:
-        print("[Experiment Agent] Creating virtual environment...")
-        returncode, _, stderr = run_command(
-            [sys.executable, "-m", "venv", str(VENV_DIR)],
+        # Clone
+        if CLONE_DIR.exists():
+            print("[Experiment Agent] Removing previous clone...")
+            shutil.rmtree(CLONE_DIR)
+
+        print(f"[Experiment Agent] Cloning {repo_url}...")
+        CLONE_DIR.parent.mkdir(parents=True, exist_ok=True)
+        returncode, stdout, stderr = run_command(
+            ["git", "clone", "--depth", "1", repo_url, str(CLONE_DIR)],
             cwd=Path("."),
-            timeout=60,
+            timeout=600,
         )
         if returncode != 0:
-            return f"# Experiment Failed\n\nFailed to create venv.\n\nError:\n```\n{stderr}\n```"
+            return f"# Experiment Failed\n\nFailed to clone repository.\n\nError:\n```\n{stderr}\n```"
+
+        # Venv
+        venv_python = VENV_DIR / "bin" / "python"
+        venv_pip = VENV_DIR / "bin" / "pip"
+
+        if venv_python.exists():
+            print("[Experiment Agent] Reusing existing virtual environment.")
+        else:
+            print("[Experiment Agent] Creating virtual environment...")
+            returncode, _, stderr = run_command(
+                [sys.executable, "-m", "venv", str(VENV_DIR)],
+                cwd=Path("."),
+                timeout=60,
+            )
+            if returncode != 0:
+                return f"# Experiment Failed\n\nFailed to create venv.\n\nError:\n```\n{stderr}\n```"
 
     # Extract setup from proposal
     print("[Experiment Agent] Extracting setup from proposal...")
@@ -444,7 +492,7 @@ def run_experiment_stage(
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"[Experiment Agent] Attempt {attempt}/{MAX_ATTEMPTS}...")
-        if attempt > 1:
+        if attempt > 1 and not use_colab:
             print("[Experiment Agent] Re-cloning repo fresh for this attempt...")
             shutil.rmtree(CLONE_DIR)
             run_command(["git", "clone", "--depth", "1", repo_url, str(CLONE_DIR)], cwd=Path("."), timeout=600)
@@ -464,7 +512,7 @@ def run_experiment_stage(
         if attempt < MAX_ATTEMPTS:
             print("[Experiment Agent] Asking agent to revise setup based on error...")
             setup = revise_setup_after_failure(setup, stdout, stderr, repo_url=repo_url, repo_name=repo_name)
-            expected_metric = setup.get("expected_metric", expected_metric)       
+            expected_metric = setup.get("expected_metric", expected_metric)
 
     elapsed = time.time() - start_time
     elapsed_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 try:
     from .config import BASE_URL, API_KEY, AGENT_ID, MODEL, PRINCIPAL_ID, SEND_MODEL_TO_AGENT_API
 except ImportError:
