@@ -8,6 +8,7 @@ import DeepLiteraturePage from "./pages/DeepLiteraturePage.jsx";
 import ProposalPage from "./pages/ProposalPage.jsx";
 import ExperimentPage from "./pages/ExperimentPage.jsx";
 import PaperPage from "./pages/PaperPage.jsx";
+import HistoryPage from "./pages/HistoryPage.jsx";
 import "./styles/app.css";
 
 const stages = [
@@ -18,6 +19,7 @@ const stages = [
   { label: "Proposal", path: "/proposal" },
   { label: "Experiment", path: "/experiment" },
   { label: "Paper", path: "/paper" },
+  { label: "History", path: "/history", under: "Paper" },
 ];
 
 const PIPELINE_STAGES = [
@@ -56,12 +58,12 @@ function Sidebar({ onDownloadClick }) {
       <div className="sidebar-title">Auto-Scientist</div>
       <ul>
         {stages.map((stage) => (
-          <li key={stage.path}>
+          <li key={stage.path} className={stage.under ? "sidebar-subitem" : ""}>
             <NavLink
               to={stage.path}
               end={stage.path === "/"}
               className={({ isActive }) =>
-                isActive ? "sidebar-link active" : "sidebar-link"
+                `${isActive ? "sidebar-link active" : "sidebar-link"}${stage.under ? " nested" : ""}`
               }
             >
               {stage.label}
@@ -78,7 +80,7 @@ function Sidebar({ onDownloadClick }) {
   );
 }
 
-function Layout({ children, onDownloadClick }) {
+function Layout({ children, onDownloadClick, canSaveRun, onSaveRun, saveRunStatus }) {
   const location = useLocation();
   const stageIndex = PIPELINE_STAGES.indexOf(location.pathname);
   const isStage = stageIndex !== -1;
@@ -88,19 +90,32 @@ function Layout({ children, onDownloadClick }) {
       <Sidebar onDownloadClick={onDownloadClick} />
       <main className="content">
         {isStage && (
-          <>
-            <div className="stage-progress">
-              {PIPELINE_STAGES.map((_, i) => (
-                <div
-                  key={i}
-                  className={`stage-pip ${i < stageIndex ? "done" : i === stageIndex ? "active" : ""}`}
-                />
-              ))}
+          <div className="stage-header">
+            <div className="stage-header-main">
+              <div className="stage-progress">
+                {PIPELINE_STAGES.map((_, i) => (
+                  <div
+                    key={i}
+                    className={`stage-pip ${i < stageIndex ? "done" : i === stageIndex ? "active" : ""}`}
+                  />
+                ))}
+              </div>
+              <div className="stage-counter">
+                Stage {stageIndex + 1} of {PIPELINE_STAGES.length}
+              </div>
             </div>
-            <div className="stage-counter">
-              Stage {stageIndex + 1} of {PIPELINE_STAGES.length}
+            <div className="stage-save-area">
+              {saveRunStatus && <span className="stage-save-status">{saveRunStatus}</span>}
+              <button
+                className="stage-save-button"
+                onClick={onSaveRun}
+                disabled={!canSaveRun}
+                title={canSaveRun ? "Save current run" : "Run Topic & Literature first"}
+              >
+                Save current run
+              </button>
             </div>
-          </>
+          </div>
         )}
         {children}
       </main>
@@ -119,6 +134,7 @@ function App() {
   const [experimentOutput, setExperimentOutput] = useState("");
   const [paperOutput, setPaperOutput] = useState("");
   const [showDownload, setShowDownload] = useState(false);
+  const [saveRunStatus, setSaveRunStatus] = useState("");
 
   function completeLitOutput(output) {
     setLitOutput(output);
@@ -156,9 +172,28 @@ function App() {
     setPaperOutput("");
   }
 
+  async function saveCurrentRun() {
+    if (!litOutput) return;
+    setSaveRunStatus("Saving...");
+    try {
+      const label = window.prompt("Name this run", "");
+      const res = await fetch("http://localhost:8000/api/runs/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: label || undefined }),
+      });
+      if (!res.ok) throw new Error("Could not save run.");
+      setSaveRunStatus("Saved");
+      setTimeout(() => setSaveRunStatus(""), 2000);
+    } catch (e) {
+      setSaveRunStatus(e.message);
+      setTimeout(() => setSaveRunStatus(""), 3000);
+    }
+  }
+
   return (
     <BrowserRouter>
-      <Layout onDownloadClick={() => setShowDownload(true)}>
+      <Layout onDownloadClick={() => setShowDownload(true)} canSaveRun={!!litOutput} onSaveRun={saveCurrentRun} saveRunStatus={saveRunStatus}>
         <Routes>
   <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
   <Route path="/topic" element={
@@ -213,6 +248,7 @@ function App() {
       onComplete={setPaperOutput}
     />}
   />
+  <Route path="/history" element={<HistoryPage />} />
 </Routes>
         {showDownload && <DownloadModal onClose={() => setShowDownload(false)} />}
       </Layout>

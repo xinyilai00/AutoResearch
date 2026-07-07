@@ -5,7 +5,6 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
-const PHASE_LABELS = ["Drafting paper...", "Polishing paper..."];
 const PHASE_DURATION_MS = 300000;
 
 export default function PaperPage({ autonomous, experimentOutput, paperOutput, onComplete }) {
@@ -13,9 +12,8 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(!!paperOutput);
   const [error, setError] = useState("");
-  const [phaseIndex, setPhaseIndex] = useState(0);
-  const phaseTimerRef = useRef(null);
   const [status, setStatus] = useState("");
+  const phaseTimerRef = useRef(null);
   const abortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -37,11 +35,9 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
     setDone(false);
     setRunning(true);
     setError("");
-    setPhaseIndex(0);
     setStatus("Drafting paper...");
 
     phaseTimerRef.current = setTimeout(() => {
-      setPhaseIndex(1);
       setStatus("Polishing paper...");
     }, PHASE_DURATION_MS);
 
@@ -74,7 +70,6 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
     } finally {
       clearTimeout(phaseTimerRef.current);
       setRunning(false);
-      setPhaseIndex(0);
     }
   }
 
@@ -84,46 +79,31 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
       <p>Writes and polishes a full academic research paper based on all previous stage outputs.</p>
 
       {!experimentOutput && (
-        <div className="warning-box">
-          No experiment output found. Please complete the Experiment stage first.
-        </div>
+        <div className="warning-box">No experiment output found. Please complete the Experiment stage first.</div>
       )}
 
       {experimentOutput && (
         <div className="input-row">
-          <button
-            className="run-button"
-            onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}
-          >
+          <button className="run-button" onClick={running ? () => abortControllerRef.current?.abort() : () => handleRun()}>
             {running ? "Stop" : done ? "Rerun" : "Run Paper Agent"}
           </button>
         </div>
       )}
 
-{experimentOutput && status && (
-  <div className="status-indicator">
-    <div className="spinner"></div>
-    <p>{status}</p>
-  </div>
-)}
+      {experimentOutput && status && (
+        <div className="status-indicator"><div className="spinner"></div><p>{status}</p></div>
+      )}
 
       {error && <div className="error-box">{error}</div>}
 
       {output && (
         <div className="output-box">
-          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-            {output}
-          </ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{output}</ReactMarkdown>
         </div>
       )}
 
-      {done && !autonomous && (
-        <FeedbackBar onRerun={(feedback) => handleRun(feedback)} disabled={running} />
-      )}
-
-      {done && autonomous && (
-        <p className="auto-note">Autonomous mode — continuing automatically...</p>
-      )}
+      {done && !autonomous && <FeedbackBar onRerun={(feedback) => handleRun(feedback)} disabled={running} />}
+      {done && autonomous && <p className="auto-note">Autonomous mode — continuing automatically...</p>}
     </div>
   );
 }

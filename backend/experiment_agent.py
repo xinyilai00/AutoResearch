@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,7 @@ CLONE_DIR = Path("paper_runs/latest/experiment/repo")
 VENV_DIR = Path("paper_runs/latest/experiment/venv").resolve()
 
 MAX_ATTEMPTS = 5
+COLAB_EXECUTOR_ERROR_PREFIX = "COLAB_EXECUTOR_ERROR:"
 
 REVISION_PROMPT = """You are a research engineer. A previous attempt to run an experiment failed.
 
@@ -204,6 +206,23 @@ def install_packages(venv_python: Path, venv_pip: Path, packages: list[str]) -> 
                 returncode, _, stderr = run_command([str(venv_pip), "install", base_package], cwd=Path("."), timeout=300)
             if returncode != 0:
                 print(f"[Experiment Agent] Warning: could not install {package}: {stderr[:200]}")
+
+
+def repo_context_from_proposal(proposal_text: str) -> tuple[str, str, str]:
+    repo_url = ""
+    repo_name = ""
+    hypothesis = ""
+
+    repo_match = re.search(r"(?im)^\s*Repo\s*:\s*(https://github\.com/[^\s)]+)", proposal_text or "")
+    if repo_match:
+        repo_url = repo_match.group(1).rstrip(".,")
+        repo_name = repo_url.replace("https://github.com/", "").strip("/")
+
+    hypothesis_match = re.search(r"(?im)^\s*Hypothesis\s*:\s*(.+)$", proposal_text or "")
+    if hypothesis_match:
+        hypothesis = hypothesis_match.group(1).strip()
+
+    return repo_url, repo_name, hypothesis
 
 
 def validate_colab_executor_url(colab_url: str) -> str:
@@ -403,9 +422,10 @@ def run_script_on_colab(
     data_setup_commands: list[str] | None = None,
     file_patches: list[dict] | None = None,
 ) -> tuple[int, str, str]:
+    endpoint = f"{colab_url.strip().rstrip('/')}/execute"
     try:
         response = http_requests.post(
-            f"{colab_url.strip().rstrip('/')}/execute",
+            endpoint,
             json={
                 "install_commands": install_commands,
                 "script": script,
@@ -414,12 +434,19 @@ def run_script_on_colab(
                 "setup_commands": data_setup_commands or [],
                 "file_patches": file_patches or [],
             },
-            timeout=1800
+            timeout=(20, 600),
         )
-        data = response.json()
-        return data["returncode"], data["stdout"], data["stderr"]
-    except Exception as e:
-        return -1, "", f"Colab executor error: {e}"
+        if response.status_code >= 400:
+            preview = response.text[:300].replace("\n", " ")
+            return -1, "", f"{COLAB_EXECUTOR_ERROR_PREFIX} POST {endpoint} returned HTTP {response.status_code}: {preview}"
+        try:
+            data = response.json()
+        except ValueError:
+            preview = response.text[:300].replace("\n", " ")
+            return -1, "", f"{COLAB_EXECUTOR_ERROR_PREFIX} POST {endpoint} did not return JSON: {preview}"
+        return data.get("returncode", -1), data.get("stdout", ""), data.get("stderr", "")
+    except http_requests.exceptions.RequestException as e:
+        return -1, "", f"{COLAB_EXECUTOR_ERROR_PREFIX} could not reach {endpoint}: {e}"
 
 
 def run_experiment_stage(
@@ -437,9 +464,14 @@ def run_experiment_stage(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    repo_url = anchor["repo_url"]
-    repo_name = anchor.get("repo_name", "")
-    hypothesis = anchor["hypothesis"]
+    proposal_repo_url, proposal_repo_name, proposal_hypothesis = repo_context_from_proposal(proposal_text)
+    repo_url = proposal_repo_url or anchor["repo_url"]
+    repo_name = proposal_repo_name or anchor.get("repo_name", "")
+    hypothesis = proposal_hypothesis or anchor["hypothesis"]
+    if proposal_repo_url and proposal_repo_url != anchor.get("repo_url", ""):
+        print(f"[Experiment Agent] Using repository from proposal text: {proposal_repo_name}")
+    if not repo_url:
+        return "# Experiment Failed\n\nNo repository context is configured for the experiment stage."
     use_colab = bool(COLAB_EXECUTOR_URL)
 
     if use_colab:
@@ -509,6 +541,9 @@ def run_experiment_stage(
 
         print(f"[Experiment Agent] Attempt {attempt} failed with exit code {returncode}.")
         print(f"[Experiment Agent] Stderr tail: {stderr[-300:]}")
+        if use_colab and stderr.startswith(COLAB_EXECUTOR_ERROR_PREFIX):
+            print("[Experiment Agent] Colab executor failed; stopping retries because setup revisions cannot fix executor availability.")
+            break
         if attempt < MAX_ATTEMPTS:
             print("[Experiment Agent] Asking agent to revise setup based on error...")
             setup = revise_setup_after_failure(setup, stdout, stderr, repo_url=repo_url, repo_name=repo_name)
@@ -519,6 +554,19 @@ def run_experiment_stage(
 
     (output_path / "training_stdout.txt").write_text(stdout, encoding="utf-8")
     (output_path / "training_stderr.txt").write_text(stderr, encoding="utf-8")
+
+    if returncode != 0 and stderr.startswith(COLAB_EXECUTOR_ERROR_PREFIX):
+        markdown = (
+            "# Experiment Failed\n\n"
+            "The configured Colab executor could not run the experiment. This is an executor availability/configuration problem, "
+            "not an experiment-design failure.\n\n"
+            "Error:\n```\n"
+            f"{stderr}\n"
+            "```\n"
+        )
+        (output_path / "experiment_output.md").write_text(markdown, encoding="utf-8")
+        print("[Experiment Agent] Done with executor failure.")
+        return markdown
 
     # Parse results with LLM
     print("[Experiment Agent] Parsing results...")

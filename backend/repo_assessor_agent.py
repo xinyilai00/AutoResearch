@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import concurrent.futures
+from collections.abc import Callable
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,7 +20,7 @@ except ImportError:
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 
-def run_repo_assessor_agent(repos: list[dict], topic: str) -> dict | None:
+def run_repo_assessor_agent(repos: list[dict], topic: str, on_graded: Callable[[list[dict]], None] | None = None) -> dict | None:
     if not repos:
         log("[Repo Assessor] No repos to assess.")
         return None
@@ -38,6 +39,9 @@ def run_repo_assessor_agent(repos: list[dict], topic: str) -> dict | None:
             except Exception as e:
                 repo = futures[future]
                 log(f"[Repo Assessor] Grader failed for {repo.get('name', 'unknown')}: {e}")
+
+    if on_graded is not None:
+        on_graded(graded)
 
     if not graded:
         log("[Repo Assessor] All graders failed.")

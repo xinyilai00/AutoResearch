@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +153,12 @@ class PipelineState:
         ref = self.state.get("active_outputs", {}).get(stage)
         if ref and str(ref).startswith("internal://"):
             versions = self.output_store.get(stage, [])
+            version_match = re.search(r"/v(\d+)$", str(ref))
+            if version_match:
+                active_version = int(version_match.group(1))
+                for item in versions:
+                    if item.get("version") == active_version:
+                        return str(item.get("text", ""))
             return str(versions[-1].get("text", "")) if versions else ""
 
         path = self.active_path(stage)
@@ -165,6 +172,12 @@ class PipelineState:
 
     def set_stage_status(self, stage: str, status: str) -> None:
         self.state.setdefault("stage_status", {})[stage] = status
+        self.save()
+
+    def clear_stages(self, stages: list[str]) -> None:
+        for stage in stages:
+            self.state.setdefault("active_outputs", {}).pop(stage, None)
+            self.state.setdefault("stage_status", {}).pop(stage, None)
         self.save()
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+from datetime import datetime, timezone
 
 from pathlib import Path
 from typing import Optional
@@ -46,6 +48,11 @@ class StageFeedbackRequest(BaseModel):
     run_dir: str = "paper_runs/latest"
 
 
+class SaveRunRequest(BaseModel):
+    label: Optional[str] = None
+    run_dir: str = "paper_runs/latest"
+
+
 def read_output(path: Path) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8")
@@ -62,6 +69,18 @@ def response_for_path(stage: str, path: Path, state: PipelineState, status: str)
     }
 
 
+DOWNSTREAM_STAGES = {
+    "pi": ["literature", "research_questions", "research_question", "deep_literature", "proposal", "repo_selection", "experiment", "paper", "review"],
+    "literature": ["research_questions", "research_question", "deep_literature", "proposal", "repo_selection", "experiment", "paper", "review"],
+    "research_questions": ["research_question", "deep_literature", "proposal", "repo_selection", "experiment", "paper", "review"],
+    "research_question": ["deep_literature", "proposal", "repo_selection", "experiment", "paper", "review"],
+    "deep_literature": ["proposal", "repo_selection", "experiment", "paper", "review"],
+    "proposal": ["experiment", "paper", "review"],
+    "experiment": ["paper", "review"],
+    "paper": ["review"],
+}
+
+
 @router.post("/api/stages/{stage}/run")
 def run_stage(stage: str, request: StageRunRequest) -> dict:
     print(f"DEBUG: received stage = {stage}")
@@ -70,6 +89,7 @@ def run_stage(stage: str, request: StageRunRequest) -> dict:
     state = PipelineState(request.run_dir)
     if request.topic:
         state.set_metadata("topic", request.topic)
+    state.clear_stages(DOWNSTREAM_STAGES.get(stage, []))
 
     try:
         if request.feedback:
@@ -164,6 +184,7 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         clear()
         log("[Proposal Stage] Starting repo search...")
         state.set_metadata("repo_candidates", [])
+        state.set_metadata("repo_grades", [])
         state.set_metadata("selected_repo_name", None)
         state.set_metadata("selected_repo_url", None)
         state.set_metadata("selected_repo_reason", None)
@@ -173,7 +194,11 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         state.set_metadata("repo_candidates", repos)
         log(f"[Proposal Stage] Repo finder returned {len(repos)} candidate(s).")
 
-        selected_repo = run_repo_assessor_agent(repos, question)
+        selected_repo = run_repo_assessor_agent(
+            repos,
+            question,
+            on_graded=lambda graded: state.set_metadata("repo_grades", graded),
+        )
         if not selected_repo:
             raise RuntimeError("Repo assessor could not select a repo.")
 
@@ -182,9 +207,12 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
             repo_name=selected_repo["name"],
             hypothesis=f"Using {selected_repo['name']}, this study investigates: {question.strip()}",
         )
+        hypothesis = f"Using {selected_repo['name']}, this study investigates: {question.strip()}"
+        state.set_metadata("selected_repo_id", selected_repo["name"])
         state.set_metadata("selected_repo_name", selected_repo["name"])
         state.set_metadata("selected_repo_url", selected_repo["url"])
         state.set_metadata("selected_repo_reason", selected_repo.get("reason", selected_repo.get("overall_assessment", "")))
+        state.set_metadata("hypothesis", hypothesis)
 
         log(f"[Proposal Stage] Selected repo: {selected_repo['name']}. Generating proposal...")
         output = run_proposal_stage(question, deep_literature, selected_repo=selected_repo)
@@ -196,7 +224,12 @@ def run_stage_without_feedback(stage: str, request: StageRunRequest, state: Pipe
         if not proposal:
             raise ValueError("Experiment stage requires proposal output.")
         output = run_experiment_stage(proposal, state.run_dir / "experiment")
-        status = "redesign_needed" if "REDESIGN_NEEDED" in output else "generated"
+        if output.lstrip().startswith("# Experiment Failed"):
+            status = "failed"
+        elif "REDESIGN_NEEDED" in output:
+            status = "redesign_needed"
+        else:
+            status = "generated"
         return state.write_stage_output("experiment", output, status=status)
 
     if stage == "paper":
@@ -244,6 +277,123 @@ def run_review_stage(request: StageRunRequest, state: PipelineState) -> Path:
     review_dir = run_review_from_file(draft_path, state.run_dir / "review", rounds=1)
     state.set_stage_status("review", "generated")
     return review_dir / "reviewed_draft.md"
+
+
+SAVED_RUNS_DIR = Path("paper_runs/saved")
+HISTORY_STAGES = [
+    "pi",
+    "literature",
+    "research_questions",
+    "research_question",
+    "deep_literature",
+    "proposal",
+    "experiment",
+    "paper",
+    "review",
+]
+
+
+def stage_error_summary(stage: str, text: str, status: str) -> str:
+    stripped = (text or "").strip()
+    if status in {"failed", "redesign_needed"}:
+        return stripped.splitlines()[0] if stripped else status
+    if stripped.startswith("# Experiment Failed") or stripped.startswith("# Failed"):
+        return stripped.splitlines()[0]
+    if "COLAB_EXECUTOR_ERROR:" in stripped:
+        return "Colab executor error"
+    return ""
+
+
+def build_run_snapshot(state: PipelineState, label: str | None = None) -> dict:
+    saved_at = datetime.now(timezone.utc).isoformat()
+    metadata = state.state.get("metadata", {})
+    stages = {}
+    errors = []
+    for stage in HISTORY_STAGES:
+        text = state.read_active_output(stage)
+        status = state.state.get("stage_status", {}).get(stage, "not_run")
+        active_ref = state.state.get("active_outputs", {}).get(stage)
+        error = stage_error_summary(stage, text, status)
+        stages[stage] = {
+            "status": status,
+            "active_ref": active_ref,
+            "output": text,
+            "preview": text[:500],
+            "error": error,
+        }
+        if error:
+            errors.append({"stage": stage, "message": error})
+
+    experiment_dir = state.run_dir / "experiment"
+    experiment_logs = {}
+    for name in ["training_stdout.txt", "training_stderr.txt", "experiment_output.md"]:
+        path = experiment_dir / name
+        if path.exists():
+            experiment_logs[name] = path.read_text(encoding="utf-8", errors="replace")
+
+    return {
+        "id": saved_at.replace(":", "").replace(".", ""),
+        "label": (label or metadata.get("topic") or "Untitled run").strip(),
+        "saved_at": saved_at,
+        "summary": {
+            "topic": metadata.get("topic", ""),
+            "research_question": stages.get("research_question", {}).get("output", "").strip(),
+            "selected_repo_name": metadata.get("selected_repo_name"),
+            "selected_repo_url": metadata.get("selected_repo_url"),
+            "stage_status": state.state.get("stage_status", {}),
+            "errors": errors,
+        },
+        "metadata": metadata,
+        "stages": stages,
+        "experiment_logs": experiment_logs,
+        "state": state.state,
+        "output_store": state.output_store,
+    }
+
+
+def saved_run_summary(snapshot: dict) -> dict:
+    summary = snapshot.get("summary", {})
+    return {
+        "id": snapshot.get("id"),
+        "label": snapshot.get("label"),
+        "saved_at": snapshot.get("saved_at"),
+        "topic": summary.get("topic", ""),
+        "research_question": summary.get("research_question", ""),
+        "selected_repo_name": summary.get("selected_repo_name"),
+        "selected_repo_url": summary.get("selected_repo_url"),
+        "stage_status": summary.get("stage_status", {}),
+        "errors": summary.get("errors", []),
+    }
+
+
+@router.post("/api/runs/save")
+def save_current_run(request: SaveRunRequest) -> dict:
+    state = PipelineState(request.run_dir)
+    snapshot = build_run_snapshot(state, request.label)
+    SAVED_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    path = SAVED_RUNS_DIR / f"{snapshot['id']}.json"
+    path.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+    return {"saved": True, "run": saved_run_summary(snapshot)}
+
+
+@router.get("/api/runs/saved")
+def list_saved_runs() -> dict:
+    SAVED_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    runs = []
+    for path in sorted(SAVED_RUNS_DIR.glob("*.json"), reverse=True):
+        try:
+            runs.append(saved_run_summary(json.loads(path.read_text(encoding="utf-8"))))
+        except Exception:
+            continue
+    return {"runs": runs}
+
+
+@router.get("/api/runs/saved/{run_id}")
+def get_saved_run(run_id: str) -> dict:
+    path = SAVED_RUNS_DIR / f"{run_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Saved run not found.")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @router.post("/api/stages/{stage}/approve")
