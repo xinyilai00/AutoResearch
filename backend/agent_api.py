@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from urllib import response
 
 import requests
 
@@ -57,7 +58,17 @@ def call_agent_api(user_input: str, label: str, principal_id: str | None = None,
             )
             response.raise_for_status()
             request_id = response.json()["data"]["requestId"]
+            session_id = response.json()["data"].get("sessionId", "")
             print("Got requestId:", request_id)
+            print("Got sessionId:", session_id)
+            try:
+                from pathlib import Path
+                log_path = Path("paper_runs/latest/session_ids.log")
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a") as f:
+                    f.write(f"{label}: requestId={request_id}, sessionId={session_id}\n")
+            except:
+                pass
             return read_agent_stream(request_id, principal_id or PRINCIPAL_ID)
         except requests.exceptions.RequestException as exc:
             last_error = exc
