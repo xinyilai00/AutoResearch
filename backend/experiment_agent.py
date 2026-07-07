@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from turtle import setup
 
 import requests as http_requests
 
@@ -36,6 +37,7 @@ RULES:
 - install_commands: list of pip package names (no version pins, unless pinning is the actual fix for a compatibility error).
 - run_script: the experiment script, corrected if the bug was in the script itself. CRITICAL: when printing any result, score, or metric, always print it on its own clearly labeled line in the exact format "RESULT: <name/identifier> | <metric name> | <value>" so that automated parsing can unambiguously map each number to exactly what it measured.
 - data_setup_commands: list of shell commands, if any.
+- IMPORTANT ABOUT FILE PATHS: your script will always be executed with its working directory (cwd) already set to the root of the cloned repository, on every execution environment this pipeline uses. Always reference repo files using relative paths or os.getcwd(). NEVER use absolute filesystem paths. NEVER search the filesystem to locate your own repo's files (e.g. do not use "find", os.walk("/"), or similar) — if the previous error was caused by this pattern, replace it with a direct relative path instead.
 - expected_metric: the primary metric to look for.
 - file_patches: list of objects, each with "file" (relative path inside the cloned repo) and "find" (exact text to find) and "replace" (text to replace it with). Use this when the bug is inside a repo source file, not in your own script. For example, if a repo file has a pandas compatibility bug, patch the exact line.
 - notes: caveats.
@@ -140,13 +142,8 @@ def sanitize_setup(setup: dict) -> dict:
     for line in script.split("\n"):
         if "os.chdir" in line:
             continue
-        if "nab_dir" in line and ("os.path.join" in line or "sys.path" in line):
-            continue
         if "sys.path.insert" in line:
             continue
-        line = line.replace("nab_dir", "os.getcwd()")
-        line = line.replace("'NAB/", "'")
-        line = line.replace('"NAB/', '"')
         fixed_lines.append(line)
     setup["run_script"] = "\n".join(fixed_lines)
 
@@ -282,6 +279,7 @@ def apply_file_patches(patches: list[dict]) -> None:
 
 
 def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str, repo_url: str = "") -> tuple[int, str, str]:
+    from backend.config import COLAB_EXECUTOR_URL
     install_commands = setup.get("install_commands", [])
     run_script_str = setup.get("run_script", "").strip()
     data_setup_commands = setup.get("data_setup_commands", [])
@@ -297,14 +295,20 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
         print("[Experiment Agent] Installing repo package...")
         run_command([str(venv_pip), "install", "-e", "."], cwd=CLONE_DIR, timeout=300)
 
-    for cmd in data_setup_commands:
-        cmd = cmd.strip()
-        if not cmd:
-            continue
-        print(f"[Experiment Agent] Data setup: {cmd}")
-        returncode, _, stderr = run_command(cmd.split(), cwd=CLONE_DIR, timeout=600)
-        if returncode != 0:
-            print(f"[Experiment Agent] Data setup warning: {stderr[:200]}")
+    if COLAB_EXECUTOR_URL:
+        print(f"[Experiment Agent] Colab executor configured — data setup will run on Colab, not locally.")
+    else:
+        for cmd in data_setup_commands:
+            cmd = cmd.strip()
+            if not cmd:
+                continue
+            print(f"[Experiment Agent] Data setup: {cmd}")
+            result = subprocess.run(
+                cmd, cwd=CLONE_DIR, shell=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600
+            )
+            if result.returncode != 0:
+                print(f"[Experiment Agent] Data setup warning: {result.stderr[:200]}")
 
     if not run_script_str:
         return -1, "", "No run script provided in setup."
@@ -321,10 +325,9 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
 
     print("[Experiment Agent] Running experiment script...")
     before_snapshot = snapshot_repo_files()
-    from backend.config import COLAB_EXECUTOR_URL
     if COLAB_EXECUTOR_URL:
         print(f"[Experiment Agent] Sending script to Colab executor...")
-        returncode, stdout, stderr = run_script_on_colab(run_script_str, install_commands, COLAB_EXECUTOR_URL, repo_url=repo_url)
+        returncode, stdout, stderr = run_script_on_colab(run_script_str, install_commands, COLAB_EXECUTOR_URL, repo_url=repo_url, data_setup_commands=data_setup_commands)
     else:
         returncode, stdout, stderr = run_script_file(venv_python, run_script_str, CLONE_DIR)
     after_snapshot = snapshot_repo_files()
@@ -367,11 +370,16 @@ def parse_results_with_llm(stdout: str, stderr: str, repo_url: str, expected_met
         agent_id=JSON_AGENT_ID,
     )
 
-def run_script_on_colab(script: str, install_commands: list[str], colab_url: str, repo_url: str = "") -> tuple[int, str, str]:
+def run_script_on_colab(script: str, install_commands: list[str], colab_url: str, repo_url: str = "", data_setup_commands: list[str] | None = None) -> tuple[int, str, str]:
     try:
         response = http_requests.post(
             f"{colab_url}/execute",
-            json={"install_commands": install_commands, "script": script, "repo_url": repo_url},
+            json={
+                "install_commands": install_commands,
+                "script": script,
+                "repo_url": repo_url,
+                "setup_commands": data_setup_commands or [],
+            },
             timeout=1800
         )
         data = response.json()
