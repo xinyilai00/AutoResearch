@@ -182,7 +182,16 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label: label || undefined }),
       });
-      if (!res.ok) throw new Error("Could not save run.");
+      if (!res.ok) {
+        let detail = `Save failed (${res.status})`;
+        try {
+          const data = await res.json();
+          detail = data.detail ? `${detail}: ${data.detail}` : detail;
+        } catch {
+          // Keep the status-only message when the backend does not return JSON.
+        }
+        throw new Error(detail);
+      }
       setSaveRunStatus("Saved");
       setTimeout(() => setSaveRunStatus(""), 2000);
     } catch (e) {
