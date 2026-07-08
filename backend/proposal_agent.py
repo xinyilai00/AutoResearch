@@ -32,6 +32,7 @@ RULES:
 - expected_metric: the primary metric name to look for in stdout.
 - notes: any important caveats about running this repo.
 - IMPORTANT FOR SPEED: if the repository involves running multiple algorithms or detectors across a dataset, choose only 2-3 representative options and/or use the smallest available test dataset/subset mentioned in the README, so the experiment completes in under 2 minutes. Do not run the full evaluation suite.
+- IMPORTANT FOR TIME-SERIES DATA SHAPES: repository dataset loaders may return a 1D numpy array, a pandas Series, a single-column DataFrame, or a multi-column DataFrame. Before windowing or indexing a signal, normalize it safely. Use np.asarray(data).squeeze() for arrays/Series, and only use data.iloc[:, 0] or data.values[:, 0] after checking the object is actually 2D. Never assume data.values[:, 0] exists.
 
 Example output:
 {

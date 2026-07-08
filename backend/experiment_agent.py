@@ -44,6 +44,7 @@ RULES:
 - file_patches: list of objects, each with "file" (relative path inside the cloned repo) and "find" (exact text to find) and "replace" (text to replace it with). Use this when the bug is inside a repo source file, not in your own script. For example, if a repo file has a pandas compatibility bug, patch the exact line.
 - notes: caveats.
 - IMPORTANT FOR SPEED: keep the script fast (under 2 minutes runtime). If previous failures were unrelated to speed, do not expand scope — keep using the smallest detector/data subset from the previous attempt.
+- IMPORTANT FOR TIME-SERIES DATA SHAPES: if the traceback shows an indexing error such as "too many indices for array" or a failing expression like data.values[:, 0], fix the script by normalizing the loaded signal safely. Use np.asarray(data).squeeze() for arrays/Series and only index columns after checking the data is actually 2D. For TSFEL, load_biopluxecg() may return a 1D signal, so pass a 1D signal directly to signal_window_splitter.
 
 IMPORTANT: If the error message and traceback point to a specific bug in a specific file inside the repository (not your own script), you MUST use file_patches to fix it directly, rather than only tweaking install_commands. Do not just guess at version pins if you know the exact line that needs to change.
 
@@ -147,7 +148,10 @@ def sanitize_setup(setup: dict) -> dict:
         if "sys.path.insert" in line:
             continue
         fixed_lines.append(line)
-    setup["run_script"] = "\n".join(fixed_lines)
+    script = "\n".join(fixed_lines)
+    script = script.replace("data.values[:, 0]", "np.asarray(data).squeeze()")
+    script = script.replace("data.to_numpy()[:, 0]", "np.asarray(data).squeeze()")
+    setup["run_script"] = script
 
     setup["install_commands"] = [
         pkg for pkg in setup.get("install_commands", [])
