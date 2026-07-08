@@ -45,6 +45,8 @@ RULES:
 - notes: caveats.
 - IMPORTANT FOR SPEED: keep the script fast (under 2 minutes runtime). If previous failures were unrelated to speed, do not expand scope — keep using the smallest detector/data subset from the previous attempt.
 - IMPORTANT FOR TIME-SERIES DATA SHAPES: if the traceback shows an indexing error such as "too many indices for array" or a failing expression like data.values[:, 0], fix the script by normalizing the loaded signal safely. Use np.asarray(data).squeeze() for arrays/Series and only index columns after checking the data is actually 2D. For TSFEL, load_biopluxecg() may return a 1D signal, so pass a 1D signal directly to signal_window_splitter.
+- IMPORTANT FOR NUMPY 2 COMPATIBILITY: if repo code fails with AttributeError for np.Inf, np.NaN, or another removed NumPy alias, use file_patches to patch the repo source directly. For np.Inf, replace np.Inf with np.inf in the file shown by the traceback, commonly utils/tools.py.
+- IMPORTANT FOR LTSF-Linear STYLE REPOS: Exp_Main.train(setting) and Exp_Main.test(setting) expect a string experiment setting, not the argparse Namespace. If you instantiate Exp_Main(args), create a setting string and pass that to train/test. Never call exp.train(args) or exp.test(args).
 
 IMPORTANT: If the error message and traceback point to a specific bug in a specific file inside the repository (not your own script), you MUST use file_patches to fix it directly, rather than only tweaking install_commands. Do not just guess at version pins if you know the exact line that needs to change.
 
@@ -134,11 +136,34 @@ def extract_setup_from_proposal(proposal_text: str) -> dict:
         print(f"[Experiment Agent] Could not extract setup JSON: {e}")
         return {"install_commands": [], "run_script": "", "data_setup_commands": [], "expected_metric": "benchmark performance"}
 
+def add_common_compatibility_patches(setup: dict) -> None:
+    patches = setup.setdefault("file_patches", [])
+    existing = {(patch.get("file"), patch.get("find")) for patch in patches if isinstance(patch, dict)}
+    common_patches = [
+        {
+            "file": "utils/tools.py",
+            "find": "np.Inf",
+            "replace": "np.inf",
+        },
+        {
+            "file": "exp/exp_basic.py",
+            "find": "np.Inf",
+            "replace": "np.inf",
+        },
+    ]
+    for patch in common_patches:
+        key = (patch["file"], patch["find"])
+        if key not in existing:
+            patches.append(patch)
+
+
 def sanitize_setup(setup: dict) -> dict:
     setup["data_setup_commands"] = [
         cmd for cmd in setup.get("data_setup_commands", [])
         if not any(skip in cmd for skip in ["git clone", "cd ", "pip install ."])
     ]
+
+    add_common_compatibility_patches(setup)
 
     script = setup.get("run_script", "")
     fixed_lines = []
@@ -151,6 +176,15 @@ def sanitize_setup(setup: dict) -> dict:
     script = "\n".join(fixed_lines)
     script = script.replace("data.values[:, 0]", "np.asarray(data).squeeze()")
     script = script.replace("data.to_numpy()[:, 0]", "np.asarray(data).squeeze()")
+    if "from exp.exp_main import Exp_Main" in script and ("exp.train(args)" in script or "exp.test(args)" in script):
+        setting_line = (
+            "        setting = f'{args.model_id}_{args.model}_{args.data}_ft{args.features}_"
+            "sl{args.seq_len}_ll{args.label_len}_pl{args.pred_len}'"
+        )
+        if "setting = f'{args.model_id}_" not in script:
+            script = script.replace("        exp = Exp_Main(args)\n", f"        exp = Exp_Main(args)\n{setting_line}\n")
+        script = script.replace("exp.train(args)", "exp.train(setting)")
+        script = script.replace("exp.test(args)", "exp.test(setting)")
     setup["run_script"] = script
 
     setup["install_commands"] = [
