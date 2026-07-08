@@ -729,6 +729,34 @@ body {
   color: #222;
 }
 
+.history-detail-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.history-download-version-button {
+  border: 1px solid #cfcbea;
+  background: #534AB7;
+  color: #fff;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.history-download-version-button:hover:not(:disabled) {
+  background: #3C3489;
+}
+
+.history-download-version-button:disabled {
+  border-color: #ddd;
+  background: #f4f4f2;
+  color: #999;
+  cursor: not-allowed;
+}
+
 @media (max-width: 900px) {
   .history-layout {
     grid-template-columns: 1fr;

@@ -70,6 +70,31 @@ export default function HistoryPage() {
     return statusValue ? statusValue.replaceAll("_", " ") : "not run";
   }
 
+  function filenameSafe(value) {
+    return (value || "saved-run")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "saved-run";
+  }
+
+  function downloadSelectedRunPaper() {
+    if (!selectedRun) return;
+    const paperOutput = selectedRun.stages?.paper?.output || "";
+    if (!paperOutput.trim()) return;
+
+    const label = filenameSafe(selectedRun.label || selectedRun.summary?.topic || selectedRun.id);
+    const blob = new Blob([paperOutput], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${label}-${selectedRun.id || "version"}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="stage-page paper-history-page">
       <h1>History</h1>
@@ -143,6 +168,16 @@ export default function HistoryPage() {
                     <pre>{info.output || "No output saved for this stage."}</pre>
                   </details>
                 ))}
+              </div>
+
+              <div className="history-detail-footer">
+                <button
+                  className="history-download-version-button"
+                  onClick={downloadSelectedRunPaper}
+                  disabled={!selectedRun.stages?.paper?.output?.trim()}
+                >
+                  Download this version
+                </button>
               </div>
             </>
           )}
