@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 export default function HistoryPage() {
   const [savedRuns, setSavedRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
+  const [selectedRunIds, setSelectedRunIds] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
 
@@ -17,7 +18,9 @@ export default function HistoryPage() {
       const res = await fetch("http://localhost:8000/api/runs/saved");
       if (!res.ok) throw new Error("Could not load saved runs.");
       const data = await res.json();
-      setSavedRuns(data.runs || []);
+      const runs = data.runs || [];
+      setSavedRuns(runs);
+      setSelectedRunIds((ids) => ids.filter((id) => runs.some((run) => run.id === id)));
     } catch (e) {
       setHistoryError(e.message);
     } finally {
@@ -37,6 +40,32 @@ export default function HistoryPage() {
     }
   }
 
+  function toggleRunSelection(runId) {
+    setSelectedRunIds((ids) => (
+      ids.includes(runId) ? ids.filter((id) => id !== runId) : [...ids, runId]
+    ));
+  }
+
+  async function deleteSelectedRuns() {
+    const count = selectedRunIds.length;
+    if (count === 0) return;
+    if (!window.confirm(`Delete ${count} saved run${count === 1 ? "" : "s"}?`)) return;
+
+    setHistoryError("");
+    try {
+      const results = await Promise.all(selectedRunIds.map(async (runId) => {
+        const res = await fetch(`http://localhost:8000/api/runs/saved/${runId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Could not delete one or more saved runs.");
+        return runId;
+      }));
+      setSavedRuns((runs) => runs.filter((run) => !results.includes(run.id)));
+      setSelectedRunIds([]);
+      if (selectedRun && results.includes(selectedRun.id)) setSelectedRun(null);
+    } catch (e) {
+      setHistoryError(e.message);
+    }
+  }
+
   function statusLabel(statusValue) {
     return statusValue ? statusValue.replaceAll("_", " ") : "not run";
   }
@@ -50,19 +79,31 @@ export default function HistoryPage() {
         <div className="history-panel">
           <div className="history-actions">
             <button className="run-button secondary" onClick={loadSavedRuns}>Refresh</button>
+            <button className="history-delete-selected-button" onClick={deleteSelectedRuns} disabled={selectedRunIds.length === 0}>
+              Delete selected{selectedRunIds.length ? ` (${selectedRunIds.length})` : ""}
+            </button>
           </div>
           {historyLoading && <div className="history-muted">Loading saved runs...</div>}
           {historyError && <div className="error-box">{historyError}</div>}
           {!historyLoading && savedRuns.length === 0 && <div className="warning-box">No saved runs yet.</div>}
           <div className="history-list">
             {savedRuns.map((run) => (
-              <button key={run.id} className={selectedRun?.id === run.id ? "history-item active" : "history-item"} onClick={() => openSavedRun(run.id)}>
-                <span className="history-title">{run.label || "Untitled run"}</span>
-                <span className="history-date">{run.saved_at ? new Date(run.saved_at).toLocaleString() : ""}</span>
-                <span className={run.errors?.length ? "history-badge failed" : "history-badge"}>
-                  {run.errors?.length ? `${run.errors.length} issue${run.errors.length === 1 ? "" : "s"}` : "saved"}
-                </span>
-              </button>
+              <div key={run.id} className={selectedRun?.id === run.id ? "history-item active" : "history-item"}>
+                <label className="history-select-control" aria-label={`Select ${run.label || "saved run"} for deletion`}>
+                  <input
+                    type="checkbox"
+                    checked={selectedRunIds.includes(run.id)}
+                    onChange={() => toggleRunSelection(run.id)}
+                  />
+                </label>
+                <button className="history-open-button" onClick={() => openSavedRun(run.id)}>
+                  <span className="history-title">{run.label || "Untitled run"}</span>
+                  <span className="history-date">{run.saved_at ? new Date(run.saved_at).toLocaleString() : ""}</span>
+                  <span className={run.errors?.length ? "history-badge failed" : "history-badge"}>
+                    {run.errors?.length ? `${run.errors.length} issue${run.errors.length === 1 ? "" : "s"}` : "saved"}
+                  </span>
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -90,7 +131,9 @@ export default function HistoryPage() {
               )}
 
               <div className="history-stage-grid">
-                {Object.entries(selectedRun.stages || {}).map(([stage, info]) => (
+                {Object.entries(selectedRun.stages || {})
+                  .filter(([stage]) => stage !== "review")
+                  .map(([stage, info]) => (
                   <details key={stage} className="history-stage">
                     <summary>
                       <span>{stage.replaceAll("_", " ")}</span>

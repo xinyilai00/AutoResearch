@@ -289,7 +289,6 @@ HISTORY_STAGES = [
     "proposal",
     "experiment",
     "paper",
-    "review",
 ]
 
 
@@ -394,6 +393,17 @@ def get_saved_run(run_id: str) -> dict:
     if not path.exists():
         raise HTTPException(status_code=404, detail="Saved run not found.")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+@router.delete("/api/runs/saved/{run_id}")
+def delete_saved_run(run_id: str) -> dict:
+    if not run_id or any(part in run_id for part in ("/", "\\", "..")):
+        raise HTTPException(status_code=400, detail="Invalid saved run id.")
+    path = SAVED_RUNS_DIR / f"{run_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Saved run not found.")
+    path.unlink()
+    return {"deleted": True, "id": run_id}
 
 
 @router.post("/api/stages/{stage}/approve")
