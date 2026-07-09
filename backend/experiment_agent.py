@@ -9,7 +9,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from turtle import setup
 
 import requests as http_requests
 
