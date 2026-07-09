@@ -212,7 +212,7 @@ function App() {
 
   async function clearCurrentRun() {
     const confirmed = window.confirm(
-      "Clear the current pipeline? This will remove the latest working outputs from Topic & Literature through Paper. Saved History runs will not be deleted."
+      "Clear the pipeline. Saved papers will not be deleted."
     );
     if (!confirmed) return;
 
