@@ -38,6 +38,7 @@ RULES:
 - install_commands: list of pip package names (no version pins, unless pinning is the actual fix for a compatibility error).
 - run_script: the experiment script, corrected if the bug was in the script itself. CRITICAL: when printing any result, score, or metric, always print it on its own clearly labeled line in the exact format "RESULT: <name/identifier> | <metric name> | <value>" so that automated parsing can unambiguously map each number to exactly what it measured.
 - data_setup_commands: list of shell commands, if any.
+- IMPORTANT FOR REQUIRED DATA FILES: if FileNotFoundError shows a missing repo data file, revise the script to verify os.path.exists before calling repo utilities. Search only inside the repo working directory for included sample data, choose a matching included train/test file if available, or add data_setup_commands when the README/file tree documents how to obtain the missing data. Do not keep hardcoded paths to absent files.
 - IMPORTANT ABOUT FILE PATHS: your script will always be executed with its working directory (cwd) already set to the root of the cloned repository, on every execution environment this pipeline uses. Always reference repo files using relative paths or os.getcwd(). NEVER use absolute filesystem paths. NEVER search the filesystem to locate your own repo's files (e.g. do not use "find", os.walk("/"), or similar) — if the previous error was caused by this pattern, replace it with a direct relative path instead.
 - expected_metric: the primary metric to look for.
 - file_patches: list of objects, each with "file" (relative path inside the cloned repo) and "find" (exact text to find) and "replace" (text to replace it with). Use this when the bug is inside a repo source file, not in your own script. For example, if a repo file has a pandas compatibility bug, patch the exact line.
@@ -178,6 +179,46 @@ def sanitize_setup(setup: dict) -> dict:
     script = "\n".join(fixed_lines)
     script = script.replace("data.values[:, 0]", "np.asarray(data).squeeze()")
     script = script.replace("data.to_numpy()[:, 0]", "np.asarray(data).squeeze()")
+    
+    path_literal_pattern = re.compile(
+       r"(?m)^(\s*[A-Za-z_]\w*(?:_file|_path|file|path)\s*=\s*)(['\"])([^'\"]+\.(?:txt|csv|tsv|json|jsonl|npy|npz|pkl|xlsx|xls|dat))\2"
+    )
+    used_path_resolver = False
+
+
+    def replace_path_literal(match: re.Match) -> str:
+        nonlocal used_path_resolver
+        prefix = match.group(1)
+        raw_path = match.group(3)
+        if raw_path.startswith(("http://", "https://", "/")):
+            return match.group(0)
+        used_path_resolver = True
+        return f"{prefix}_autoresearch_resolve_existing_path({json.dumps(raw_path, ensure_ascii=False)})"
+
+
+    script = path_literal_pattern.sub(replace_path_literal, script)
+
+
+    path_argument_pattern = re.compile(
+        r"(?<!def\s)(\b[A-Za-z_]\w*\()([A-Za-z_]\w*(?:_file|_path|file|path))(\s*,)"
+    )
+
+
+    def replace_path_argument(match: re.Match) -> str:
+        nonlocal used_path_resolver
+        function_prefix = match.group(1)
+        variable_name = match.group(2)
+        suffix = match.group(3)
+        if function_prefix.endswith("_autoresearch_resolve_existing_path("):
+            return match.group(0)
+        used_path_resolver = True
+        return f"{function_prefix}_autoresearch_resolve_existing_path({variable_name}){suffix}"
+
+
+    script = path_argument_pattern.sub(replace_path_argument, script)
+    if used_path_resolver and "def _autoresearch_resolve_existing_path" not in script:
+        path_helper = '\n\ndef _autoresearch_resolve_existing_path(path):\n    import os as _autoresearch_os\n    import glob as _autoresearch_glob\n    from pathlib import Path as _AutoresearchPath\n\n    requested = str(path)\n    if _autoresearch_os.path.exists(requested):\n        return requested\n\n    basename = _autoresearch_os.path.basename(requested)\n    suffix = _AutoresearchPath(requested).suffix.lower()\n    print(f"Requested data file not found: {requested}")\n\n    basename_matches = [p for p in _autoresearch_glob.glob("**/" + basename, recursive=True) if _autoresearch_os.path.isfile(p)]\n    if basename_matches:\n        chosen = sorted(basename_matches, key=len)[0]\n        print(f"Using located data file with matching basename: {chosen}")\n        return chosen\n\n    data_extensions = {".txt", ".csv", ".tsv", ".json", ".jsonl", ".npy", ".npz", ".pkl", ".xlsx", ".xls", ".dat"}\n    candidates = [\n        p for p in _autoresearch_glob.glob("**/*", recursive=True)\n        if _autoresearch_os.path.isfile(p) and _AutoresearchPath(p).suffix.lower() in data_extensions\n    ]\n    if suffix:\n        same_suffix = [p for p in candidates if _AutoresearchPath(p).suffix.lower() == suffix]\n    else:\n        same_suffix = candidates\n\n    requested_tokens = {token for token in _AutoresearchPath(requested).stem.lower().replace("-", "_").split("_") if len(token) >= 3}\n    scored = []\n    for candidate in same_suffix:\n        candidate_text = candidate.lower().replace("-", "_")\n        score = sum(1 for token in requested_tokens if token in candidate_text)\n        if "train" in requested_tokens and "train" in candidate_text:\n            score += 3\n        if "test" in requested_tokens and "test" in candidate_text:\n            score += 3\n        if "data" in candidate_text:\n            score += 1\n        scored.append((score, len(candidate), candidate))\n    scored = [item for item in scored if item[0] > 0]\n    if scored:\n        chosen = sorted(scored, reverse=True)[0][2]\n        print(f"Using closest available data file for {requested}: {chosen}")\n        return chosen\n\n    preview = sorted(candidates)[:25]\n    raise FileNotFoundError(\n        f"Required data file {requested!r} was not found after cloning/setup. "\n        f"Available data-like files include: {preview}. "\n        "The proposal should add data_setup_commands or choose an included file."\n    )\n'
+        script = path_helper + "\n" + script
 
     dataframe_column_pattern = re.compile(
         r"\b((?:df\w*|\w*_df|\w*data\w*|dataset\w*|train\w*|test\w*|valid\w*))\b\[['\"]([^'\"]{2,80})['\"]\](?!\s*=(?!=))"
