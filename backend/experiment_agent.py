@@ -306,14 +306,67 @@ def check_script_syntax(script: str) -> tuple[bool, str]:
     except SyntaxError as e:
         return False, f"SyntaxError: {e.msg} at line {e.lineno}: {e.text}"
 
-def verify_script_uses_repo(script: str, repo_name: str) -> tuple[bool, str]:
-    # Heuristic: the script should reference the actual repo's package name
-    # e.g. for numenta/NAB, expect "nab." somewhere in imports
-    package_hint = repo_name.split("/")[-1].lower()
+COMMON_IMPORT_ROOTS = {
+    "argparse", "collections", "csv", "datetime", "glob", "itertools", "json", "math",
+    "os", "pathlib", "random", "re", "shutil", "statistics", "subprocess", "sys",
+    "tempfile", "time", "typing", "warnings",
+    "matplotlib", "numpy", "pandas", "scipy", "sklearn", "torch", "tensorflow",
+    "seaborn", "statsmodels", "xgboost", "lightgbm", "requests", "urllib",
+}
+
+
+def repo_slug_tokens(repo_name: str) -> set[str]:
+    slug = (repo_name or "").split("/")[-1].lower()
+    compact = re.sub(r"[^a-z0-9]", "", slug)
+    tokens = {slug, compact}
+    tokens.update(token for token in re.split(r"[^a-z0-9]+", slug) if len(token) >= 3)
+    if slug == "nab":
+        tokens.add("nab")
+    return {token for token in tokens if token}
+
+
+def imported_roots(script: str) -> set[str]:
+    roots = set()
+    for match in re.finditer(r"(?m)^\s*(?:from|import)\s+([A-Za-z_][\w.]*)", script):
+        roots.add(match.group(1).split(".")[0].lower())
+    return roots
+
+
+def verify_script_uses_repo(script: str, repo_name: str, setup: dict | None = None) -> tuple[bool, str]:
     script_lower = script.lower()
-    if package_hint in script_lower or "from nab" in script_lower or "import nab" in script_lower:
+    tokens = repo_slug_tokens(repo_name)
+
+    if any(token in script_lower for token in tokens):
         return True, ""
-    return False, f"Script does not appear to use the actual repository's code (expected references to '{package_hint}' or 'nab' package, found none). This may be a fabricated/generic script."
+    if "from nab" in script_lower or "import nab" in script_lower:
+        return True, ""
+
+    setup = setup or {}
+    patch_files = [str(patch.get("file", "")).strip() for patch in setup.get("file_patches", []) if isinstance(patch, dict)]
+    setup_text = "\n".join(setup.get("data_setup_commands", []) + patch_files).lower()
+    if setup_text and any(token in setup_text for token in tokens):
+        return True, ""
+    if patch_files:
+        return True, ""
+
+    local_imports = imported_roots(script) - COMMON_IMPORT_ROOTS
+    if local_imports:
+        return True, ""
+
+    repo_path_patterns = [
+        r"['\"](?:\./)?(?:src|data|datasets|examples|example|models|model|utils|experiments|scripts|results|NAB|nab)/",
+        r"os\.path\.join\([^)]*['\"](?:src|data|datasets|examples|example|models|model|utils|experiments|scripts|results|NAB|nab)['\"]",
+        r"Path\([^)]*['\"](?:src|data|datasets|examples|example|models|model|utils|experiments|scripts|results|NAB|nab)['\"]",
+    ]
+    if any(re.search(pattern, script) for pattern in repo_path_patterns):
+        return True, ""
+
+    expected = ", ".join(sorted(tokens)) or "repo-specific imports/files"
+    return False, (
+        "Script does not show clear evidence of using the selected repository code "
+        f"(looked for repo tokens/imports/relative repo paths such as {expected}). "
+        "This may be a fabricated/generic script."
+    )
 
 
 def revise_setup_after_failure(previous_setup: dict, stdout: str, stderr: str, repo_url: str = "", repo_name: str = "") -> dict:
@@ -366,7 +419,7 @@ def execute_setup(setup: dict, venv_python: Path, venv_pip: Path, repo_name: str
         print(f"[Experiment Agent] Script has a syntax error, skipping execution: {syntax_error}")
         return -1, "", f"SCRIPT SYNTAX ERROR (script was not executed):\n{syntax_error}"
 
-    uses_repo, repo_warning = verify_script_uses_repo(run_script_str, repo_name)
+    uses_repo, repo_warning = verify_script_uses_repo(run_script_str, repo_name, setup)
     if not uses_repo:
         print(f"[Experiment Agent] WARNING: {repo_warning}")
         return -1, "", f"SCRIPT VALIDATION FAILED: {repo_warning}"
