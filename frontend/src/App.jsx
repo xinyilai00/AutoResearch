@@ -80,7 +80,7 @@ function Sidebar({ onDownloadClick }) {
   );
 }
 
-function Layout({ children, onDownloadClick, canSaveRun, onSaveRun, saveRunStatus }) {
+function Layout({ children, onDownloadClick, canSaveRun, onSaveRun, saveRunStatus, onClearRun, clearRunStatus }) {
   const location = useLocation();
   const stageIndex = PIPELINE_STAGES.indexOf(location.pathname);
   const isStage = stageIndex !== -1;
@@ -105,7 +105,16 @@ function Layout({ children, onDownloadClick, canSaveRun, onSaveRun, saveRunStatu
               </div>
             </div>
             <div className="stage-save-area">
-              {saveRunStatus && <span className="stage-save-status">{saveRunStatus}</span>}
+              {(saveRunStatus || clearRunStatus) && (
+                <span className="stage-save-status">{clearRunStatus || saveRunStatus}</span>
+              )}
+              <button
+                className="stage-clear-button"
+                onClick={onClearRun}
+                title="Clear the current pipeline and start over"
+              >
+                Clear run
+              </button>
               <button
                 className="stage-save-button"
                 onClick={onSaveRun}
@@ -135,6 +144,7 @@ function App() {
   const [paperOutput, setPaperOutput] = useState("");
   const [showDownload, setShowDownload] = useState(false);
   const [saveRunStatus, setSaveRunStatus] = useState("");
+  const [clearRunStatus, setClearRunStatus] = useState("");
 
   function completeLitOutput(output) {
     setLitOutput(output);
@@ -200,9 +210,56 @@ function App() {
     }
   }
 
+  async function clearCurrentRun() {
+    const confirmed = window.confirm(
+      "Clear the current pipeline? This will remove the latest working outputs from Topic & Literature through Paper. Saved History runs will not be deleted."
+    );
+    if (!confirmed) return;
+
+    setClearRunStatus("Clearing...");
+    try {
+      const res = await fetch("http://localhost:8000/api/runs/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_dir: "paper_runs/latest" }),
+      });
+      if (!res.ok) {
+        let detail = `Clear failed (${res.status})`;
+        try {
+          const data = await res.json();
+          detail = data.detail ? `${detail}: ${data.detail}` : detail;
+        } catch {
+          // Keep the status-only message when the backend does not return JSON.
+        }
+        throw new Error(detail);
+      }
+      setTopic("");
+      setLitOutput("");
+      setQuestions([]);
+      setSelectedQuestion("");
+      setDeepLitOutput("");
+      setProposalOutput("");
+      setExperimentOutput("");
+      setPaperOutput("");
+      setSaveRunStatus("");
+      setClearRunStatus("Cleared");
+      setTimeout(() => setClearRunStatus(""), 2000);
+    } catch (e) {
+      setClearRunStatus(e.message);
+      setTimeout(() => setClearRunStatus(""), 3500);
+    }
+  }
+
   return (
     <BrowserRouter>
-      <Layout onDownloadClick={() => setShowDownload(true)} canSaveRun={!!litOutput} onSaveRun={saveCurrentRun} saveRunStatus={saveRunStatus}>
+      <Layout
+        onDownloadClick={() => setShowDownload(true)}
+        canSaveRun={!!litOutput}
+        onSaveRun={saveCurrentRun}
+        saveRunStatus={saveRunStatus}
+        onClearRun={clearCurrentRun}
+        clearRunStatus={clearRunStatus}
+      >
         <Routes>
   <Route path="/" element={<DashboardPage autonomous={autonomous} setAutonomous={setAutonomous} />} />
   <Route path="/topic" element={

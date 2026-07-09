@@ -373,6 +373,22 @@ body {
   cursor: not-allowed;
 }
 
+.stage-clear-button {
+  border: 1px solid #e3beb8;
+  background: #fff8f7;
+  color: #9a3325;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stage-clear-button:hover {
+  background: #fff1ef;
+  border-color: #c96558;
+}
+
 .stage-progress {
   display: flex;
   gap: 4px;

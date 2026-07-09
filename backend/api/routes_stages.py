@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import shutil
 from datetime import datetime, timezone
 
 from pathlib import Path
@@ -50,6 +51,10 @@ class StageFeedbackRequest(BaseModel):
 
 class SaveRunRequest(BaseModel):
     label: Optional[str] = None
+    run_dir: str = "paper_runs/latest"
+
+
+class ClearRunRequest(BaseModel):
     run_dir: str = "paper_runs/latest"
 
 
@@ -421,6 +426,19 @@ def approve_stage(stage: str, run_dir: str = "paper_runs/latest") -> dict:
 @router.get("/api/runs/latest")
 def get_latest_run(run_dir: str = "paper_runs/latest") -> dict:
     return PipelineState(run_dir).state
+
+
+@router.post("/api/runs/clear")
+def clear_latest_run(request: ClearRunRequest) -> dict:
+    run_dir = Path(request.run_dir)
+    if run_dir != Path("paper_runs/latest"):
+        raise HTTPException(status_code=400, detail="Only the latest working run can be cleared from this endpoint.")
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    state = PipelineState(run_dir)
+    state.save()
+    state.save_output_store()
+    return {"cleared": True, "run_dir": str(run_dir)}
 
 
 @router.get("/api/stages/{stage}/output")
