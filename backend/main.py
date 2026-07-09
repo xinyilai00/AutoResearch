@@ -54,7 +54,6 @@ def user_selection(questions: list[str]) -> str:
 
         print(f"Invalid input. Please enter a number between 1 and {len(questions)} or 'quit'.")
 
-
 def parse_question_list(raw_output: str) -> list[str]:
     try:
         parsed = json.loads(raw_output)
