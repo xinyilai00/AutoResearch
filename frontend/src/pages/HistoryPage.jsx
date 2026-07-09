@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { API_BASE_URL } from "../api/client.js";
 
 export default function HistoryPage() {
   const [savedRuns, setSavedRuns] = useState([]);
@@ -15,7 +16,7 @@ export default function HistoryPage() {
     setHistoryLoading(true);
     setHistoryError("");
     try {
-      const res = await fetch("http://localhost:8000/api/runs/saved");
+      const res = await fetch(`${API_BASE_URL}/api/runs/saved`);
       if (!res.ok) throw new Error("Could not load saved runs.");
       const data = await res.json();
       const runs = data.runs || [];
@@ -31,7 +32,7 @@ export default function HistoryPage() {
   async function openSavedRun(runId) {
     setHistoryError("");
     try {
-      const res = await fetch(`http://localhost:8000/api/runs/saved/${runId}`);
+      const res = await fetch(`${API_BASE_URL}/api/runs/saved/${runId}`);
       if (!res.ok) throw new Error("Could not open saved run.");
       const data = await res.json();
       setSelectedRun(data);
@@ -54,7 +55,7 @@ export default function HistoryPage() {
     setHistoryError("");
     try {
       const results = await Promise.all(selectedRunIds.map(async (runId) => {
-        const res = await fetch(`http://localhost:8000/api/runs/saved/${runId}`, { method: "DELETE" });
+        const res = await fetch(`${API_BASE_URL}/api/runs/saved/${runId}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Could not delete one or more saved runs.");
         return runId;
       }));

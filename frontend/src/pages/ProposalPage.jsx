@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
+import { API_BASE_URL } from "../api/client.js";
 
 export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput, onComplete }) {
   const navigate = useNavigate();
@@ -51,7 +52,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
 
   async function fetchProgressLines() {
     try {
-      const r = await fetch("http://localhost:8000/api/progress");
+      const r = await fetch(`${API_BASE_URL}/api/progress`);
       const data = await r.json();
       const lines = data.lines || [];
       setProgressLines((previous) => (lines.length > 0 ? lines : running ? previous : []));
@@ -60,7 +61,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
 
   async function fetchRunState() {
     try {
-      const r = await fetch("http://localhost:8000/api/runs/latest");
+      const r = await fetch(`${API_BASE_URL}/api/runs/latest`);
       const state = await r.json();
       updateRepoInfoFromState(state);
     } catch {}
@@ -108,7 +109,7 @@ export default function ProposalPage({ autonomous, deepLitOutput, proposalOutput
     setRepoInfo(null);
 
     try {
-      const response = await fetch("http://localhost:8000/api/stages/proposal/run", {
+      const response = await fetch(`${API_BASE_URL}/api/stages/proposal/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

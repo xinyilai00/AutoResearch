@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../api/client.js";
 
 export default function ResearchQuestionPage({ autonomous, topic, litOutput, questions, onQuestionsGenerated, selectedQuestion, onComplete }) {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
     setCustom("");
 
     try {
-      const response = await fetch("http://localhost:8000/api/stages/research_questions/run", {
+      const response = await fetch(`${API_BASE_URL}/api/stages/research_questions/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: topic, literature: litOutput }),
@@ -66,7 +67,7 @@ export default function ResearchQuestionPage({ autonomous, topic, litOutput, que
     if (!finalQuestion) return;
 
     try {
-      await fetch("http://localhost:8000/api/stages/research_question/run", {
+      await fetch(`${API_BASE_URL}/api/stages/research_question/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ research_question: finalQuestion })

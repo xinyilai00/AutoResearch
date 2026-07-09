@@ -14,6 +14,24 @@ except ImportError:
 
 import json as _json
 
+def log_dianjin_failure(label: str, session_id: str, request_id: str, reason: str) -> None:
+    """Append a genuine Dianjin final-failure (after all retries) to a persistent log
+    so the supervisor can look up the sessionId in the Dianjin console. Appends across
+    all runs; never overwrites."""
+    try:
+        from pathlib import Path
+        from datetime import datetime
+        log_path = Path("paper_runs/latest/dianjin_failures.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a") as f:
+            f.write(
+                f"{timestamp} | {label} | FAILED after retries | reason={reason} | "
+                f"sessionId={session_id or 'N/A'} | requestId={request_id or 'N/A'}\n"
+            )
+    except Exception:
+        pass
+
 def call_agent_api_json(user_input: str, label: str, max_retries: int = 2, agent_id: int | None = None) -> dict:
     prompt = user_input
     for attempt in range(max_retries + 1):
@@ -48,6 +66,8 @@ def call_agent_api(user_input: str, label: str, principal_id: str | None = None,
         body["model"] = MODEL
 
     last_error: Exception | None = None
+    session_id = ""
+    request_id = ""
     for attempt in range(1, 4):
         try:
             response = requests.post(
@@ -80,6 +100,7 @@ def call_agent_api(user_input: str, label: str, principal_id: str | None = None,
             print(f"{label} API stream failed on attempt {attempt}/3: {exc}")
             if attempt < 3:
                 time.sleep(5 * attempt)
+    log_dianjin_failure(label, session_id, request_id, str(last_error))
     raise RuntimeError(f"{label} API unavailable: {last_error}")
 
 

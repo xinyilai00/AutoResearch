@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import { API_BASE_URL } from "../api/client.js";
 
 const PHASE_DURATION_MS = 300000;
 
@@ -42,7 +43,7 @@ export default function PaperPage({ autonomous, experimentOutput, paperOutput, o
     }, PHASE_DURATION_MS);
 
     try {
-      const res = await fetch("http://localhost:8000/api/stages/paper/run", {
+      const res = await fetch(`${API_BASE_URL}/api/stages/paper/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ feedback: feedback || undefined }),

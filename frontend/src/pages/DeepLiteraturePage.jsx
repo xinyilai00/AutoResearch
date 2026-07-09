@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
+import { API_BASE_URL } from "../api/client.js";
 
 export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepLitOutput, onComplete }) {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
 
   async function fetchCitationLinks() {
     try {
-      const response = await fetch("http://localhost:8000/api/runs/latest");
+      const response = await fetch(`${API_BASE_URL}/api/runs/latest`);
       const state = await response.json();
       setCitationLinks(state?.metadata?.deep_literature_citations || []);
     } catch {}
@@ -65,7 +66,7 @@ export default function DeepLiteraturePage({ autonomous, selectedQuestion, deepL
     setCitationLinks([]);
 
     try {
-      const response = await fetch("http://localhost:8000/api/stages/deep_literature/run", {
+      const response = await fetch(`${API_BASE_URL}/api/stages/deep_literature/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ research_question: selectedQuestion, feedback: feedback }),

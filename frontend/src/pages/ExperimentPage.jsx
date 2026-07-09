@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
+import { API_BASE_URL } from "../api/client.js";
 
 export default function ExperimentPage({ autonomous, proposalOutput, experimentOutput, onComplete }) {
   const navigate = useNavigate();
@@ -38,8 +39,7 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
     setError("");
 
     try {
-      const res = await fetch("http://localhost:8000/api/stages/experiment/run", {
-        method: "POST",
+    const res = await fetch(`${API_BASE_URL}/api/stages/experiment/run`, {        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           proposal: proposalOutput,
@@ -91,7 +91,18 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
       {running && (
         <div className="status-indicator">
           <div className="spinner"></div>
-          <p>Running experiment — training on CPU may take 15-20 minutes. Do not close this page.</p>
+          <p>Running experiment — training on CPU may take 15-20 minutes.</p>
+          <p style={{
+            color: "#fc8181",
+            fontWeight: 700,
+            fontSize: "16px",
+            border: "2px solid #fc8181",
+            borderRadius: "8px",
+            padding: "10px",
+            marginTop: "8px",
+          }}>
+            ⚠️ DO NOT LEAVE OR RELOAD THIS PAGE WHILE THE EXPERIMENT IS RUNNING.
+          </p>
         </div>
       )}
 

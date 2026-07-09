@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import FeedbackBar from "../components/FeedbackBar.jsx";
+import { API_BASE_URL } from "../api/client.js";
 
 export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, litOutput, onComplete })
 {  const navigate = useNavigate();
@@ -44,7 +45,7 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
     setStatus("Researching...");
 
     try {
-      const piResponse = await fetch("http://localhost:8000/api/stages/pi/run", {
+      const piResponse = await fetch(`${API_BASE_URL}/api/stages/pi/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: localTopic, feedback: feedback }),        signal: signal
@@ -55,7 +56,7 @@ export default function TopicLiteraturePage({ autonomous, topic, onTopicSet, lit
       const piOutput = piData.output || "";
 
       setStatus("Generating literature review...");
-      const litResponse = await fetch("http://localhost:8000/api/stages/literature/run", {
+      const litResponse = await fetch(`${API_BASE_URL}/api/stages/literature/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: localTopic, pi_output: piOutput, feedback: feedback }),        signal: signal

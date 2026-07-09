@@ -10,6 +10,7 @@ import ExperimentPage from "./pages/ExperimentPage.jsx";
 import PaperPage from "./pages/PaperPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
 import "./styles/app.css";
+import { API_BASE_URL } from "./api/client.js";
 
 const stages = [
   { label: "Dashboard", path: "/" },
@@ -41,7 +42,7 @@ function DownloadModal({ onClose }) {
         </div>
         <p className="modal-subtitle">Choose a format to download your paper.</p>
         <div className="modal-options">
-          <button className="modal-option-btn" onClick={() => window.open("http://localhost:8000/api/download/pdf", "_blank")}>
+          <button className="modal-option-btn" onClick={() => window.open(`${API_BASE_URL}/api/download/pdf`, "_blank")}>
             <span className="modal-option-icon">📄</span>
             <span className="modal-option-label">PDF</span>
             <span className="modal-option-desc">Best for sharing and printing</span>
@@ -187,7 +188,7 @@ function App() {
     setSaveRunStatus("Saving...");
     try {
       const label = window.prompt("Name this run", "");
-      const res = await fetch("http://localhost:8000/api/runs/save", {
+      const res = await fetch(`${API_BASE_URL}/api/runs/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label: label || undefined }),
@@ -218,7 +219,7 @@ function App() {
 
     setClearRunStatus("Clearing...");
     try {
-      const res = await fetch("http://localhost:8000/api/runs/clear", {
+      const res = await fetch(`${API_BASE_URL}/api/runs/clear`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ run_dir: "paper_runs/latest" }),
