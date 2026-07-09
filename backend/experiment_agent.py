@@ -45,6 +45,9 @@ RULES:
 - notes: caveats.
 - IMPORTANT FOR SPEED: keep the script fast (under 2 minutes runtime). If previous failures were unrelated to speed, do not expand scope — keep using the smallest detector/data subset from the previous attempt.
 - IMPORTANT FOR TIME-SERIES DATA SHAPES: if the traceback shows an indexing error such as "too many indices for array" or a failing expression like data.values[:, 0], fix the script by normalizing the loaded signal safely. Use np.asarray(data).squeeze() for arrays/Series and only index columns after checking the data is actually 2D. For TSFEL, load_biopluxecg() may return a 1D signal, so pass a 1D signal directly to signal_window_splitter.
+- IMPORTANT FOR PANDAS COLUMN ERRORS: if the traceback shows KeyError for any DataFrame column, the script must not hardcode that missing column. Revise the script to inspect actual df.columns at runtime, print available columns, normalize/alias names, and select only columns that exist. If the intended concept is progression/cycle/semester but no explicit column exists, infer progression from actual numbered stage/course columns in the dataset, such as columns ending in 0, 1, 2, 3, etc.; do not invent a Cycle column. If no semantic match exists, fall back to an existing numeric/target column and state that fallback in stdout. Never access df["some column"] unless the script has first verified that exact column exists.
+- IMPORTANT FOR CATEGORICAL FEATURES: if sklearn, imblearn, numpy, or a model raises ValueError such as "could not convert string to float", the feature matrix contains categorical strings. Encode object/category/bool feature columns with pandas.get_dummies or an sklearn ColumnTransformer before SMOTE/fit/predict. Keep train/test columns aligned by fitting the feature schema on training data and reindexing test data to the same columns. Do not drop categorical variables silently unless they are identifiers.
+- IMPORTANT FOR RESAMPLING/SMOTE: before calling SMOTE, SMOTETomek, or any imblearn fit_resample method, check y.value_counts(). If y has fewer than two classes, or any class has fewer than two samples, skip resampling for that subset and train on the original encoded data. Do not let a single-class train split crash the experiment.
 - IMPORTANT FOR NUMPY 2 COMPATIBILITY: if repo code fails with AttributeError for np.Inf, np.NaN, or another removed NumPy alias, use file_patches to patch the repo source directly. For np.Inf, replace np.Inf with np.inf in the file shown by the traceback, commonly utils/tools.py.
 - IMPORTANT FOR LTSF-Linear STYLE REPOS: Exp_Main.train(setting) and Exp_Main.test(setting) expect a string experiment setting, not the argparse Namespace. If you instantiate Exp_Main(args), create a setting string and pass that to train/test. Never call exp.train(args) or exp.test(args).
 
@@ -176,6 +179,58 @@ def sanitize_setup(setup: dict) -> dict:
     script = "\n".join(fixed_lines)
     script = script.replace("data.values[:, 0]", "np.asarray(data).squeeze()")
     script = script.replace("data.to_numpy()[:, 0]", "np.asarray(data).squeeze()")
+
+    dataframe_column_pattern = re.compile(
+        r"\b((?:df\w*|\w*_df|\w*data\w*|dataset\w*|train\w*|test\w*|valid\w*))\b\[['\"]([^'\"]{2,80})['\"]\](?!\s*=(?!=))"
+    )
+    used_safe_column_helper = False
+
+    def replace_dataframe_column(match: re.Match) -> str:
+        nonlocal used_safe_column_helper
+        variable_name = match.group(1)
+        column_name = match.group(2)
+        used_safe_column_helper = True
+        column_literal = json.dumps(column_name, ensure_ascii=False)
+        return f"_autoresearch_resolve_column({variable_name}, {column_literal})"
+
+    script = dataframe_column_pattern.sub(replace_dataframe_column, script)
+
+    filtered_dataframe_pattern = re.compile(
+        r"(\b(?:df\w*|\w*_df|\w*data\w*|dataset\w*|train\w*|test\w*|valid\w*)\[[^\n\]]+\])\[['\"]([^'\"]{2,80})['\"]\](?!\s*=(?!=))"
+    )
+
+    def replace_filtered_dataframe_column(match: re.Match) -> str:
+        nonlocal used_safe_column_helper
+        dataframe_expr = match.group(1)
+        column_name = match.group(2)
+        used_safe_column_helper = True
+        column_literal = json.dumps(column_name, ensure_ascii=False)
+        return f"{dataframe_expr}.pipe(lambda _autoresearch_df: _autoresearch_resolve_column(_autoresearch_df, {column_literal}))"
+
+    script = filtered_dataframe_pattern.sub(replace_filtered_dataframe_column, script)
+    if used_safe_column_helper and "def _autoresearch_resolve_column" not in script:
+        helper = '\n\ndef _autoresearch_normalize_column_name(name):\n    import re as _autoresearch_re\n    import unicodedata as _autoresearch_unicodedata\n    text = _autoresearch_unicodedata.normalize("NFKD", str(name))\n    text = "".join(ch for ch in text if not _autoresearch_unicodedata.combining(ch))\n    return _autoresearch_re.sub(r"[^a-z0-9]+", "", text.lower())\n\n\ndef _autoresearch_infer_progression_column(df, requested):\n    import re as _autoresearch_re\n    requested_norm = _autoresearch_normalize_column_name(requested)\n    progression_terms = {"cycle", "ciclo", "ultimociclo", "semester", "semestre", "term", "stage", "progression", "period"}\n    if requested_norm not in progression_terms:\n        return None\n\n    columns = list(getattr(df, "columns", []))\n    explicit_terms = progression_terms | {"year", "ano", "level", "nivel"}\n    for col in columns:\n        if _autoresearch_normalize_column_name(col) in explicit_terms:\n            return df[col]\n\n    numbered_groups = {}\n    for col in columns:\n        col_text = str(col)\n        if col_text.lower().startswith(("faltas", "absence", "absences", "missing")):\n            continue\n        match = _autoresearch_re.match(r"^(.+?)(\\d+)$", col_text)\n        if not match:\n            continue\n        base, number = match.group(1), int(match.group(2))\n        numbered_groups.setdefault(base, []).append((number, col))\n\n    if not numbered_groups:\n        return None\n\n    sequence = max(numbered_groups.values(), key=len)\n    if len(sequence) < 2:\n        return None\n    sequence = sorted(sequence)\n    inferred = None\n    for number, col in sequence:\n        present = df[col].notna()\n        if inferred is None:\n            inferred = present.astype(int) * number\n        else:\n            inferred = inferred.where(~present, number)\n    if inferred is not None:\n        inferred.name = str(requested)\n    return inferred\n\n\ndef _autoresearch_resolve_column(df, requested):\n    columns = list(getattr(df, "columns", []))\n    print("Available columns:", columns)\n    if not columns:\n        return df[requested]\n\n    if requested in columns:\n        return df[requested]\n\n    requested_norm = _autoresearch_normalize_column_name(requested)\n    for col in columns:\n        if _autoresearch_normalize_column_name(col) == requested_norm:\n            return df[col]\n\n    inferred_progression = _autoresearch_infer_progression_column(df, requested)\n    if inferred_progression is not None:\n        print(f"Inferred {requested!r} from numbered progression columns.")\n        return inferred_progression\n\n    aliases = {\n        "target": ["target", "label", "class", "y", "outcome", "risk", "disease", "diagnosis"],\n        "label": ["label", "target", "class", "y", "outcome"],\n        "class": ["class", "label", "target", "y"],\n    }\n    for alias in aliases.get(requested_norm, []):\n        alias_norm = _autoresearch_normalize_column_name(alias)\n        for col in columns:\n            if _autoresearch_normalize_column_name(col) == alias_norm:\n                return df[col]\n\n    if hasattr(df, "select_dtypes"):\n        numeric = df.select_dtypes(include="number")\n        if not numeric.empty:\n            print(f"Column {requested!r} not found; using first numeric column {numeric.columns[0]!r}.")\n            return numeric.iloc[:, 0]\n\n    if hasattr(df, "iloc"):\n        print(f"Column {requested!r} not found; using first available column {columns[0]!r}.")\n        return df.iloc[:, 0]\n\n    raise KeyError(f"Column {requested!r} not found. Available columns: {columns}")\n'
+        script = helper + "\n" + script
+    needs_feature_encoder = bool(re.search(r"\.(fit_resample|fit|predict)\s*\(\s*[A-Za-z_]\w*", script))
+    if needs_feature_encoder:
+        script = re.sub(
+            r"\b([A-Za-z_]\w*)\.fit_resample\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)",
+            r"_autoresearch_safe_fit_resample(\1, _autoresearch_encode_features(\2, fit=True), \3)",
+            script,
+        )
+        script = re.sub(
+            r"\.fit\(\s*([A-Za-z_]\w*)\s*,",
+            r".fit(_autoresearch_encode_features(\1, fit=True),",
+            script,
+        )
+        script = re.sub(
+            r"\.predict\(\s*([A-Za-z_]\w*)\s*\)",
+            r".predict(_autoresearch_encode_features(\1, fit=False))",
+            script,
+        )
+        if "def _autoresearch_encode_features" not in script:
+            feature_helper = '\n\n_autoresearch_feature_columns = None\n\n\ndef _autoresearch_encode_features(X, fit=False):\n    import numpy as _autoresearch_np\n    import pandas as _autoresearch_pd\n\n    global _autoresearch_feature_columns\n    if isinstance(X, _autoresearch_pd.Series):\n        X_df = X.to_frame()\n    elif isinstance(X, _autoresearch_pd.DataFrame):\n        X_df = X.copy()\n    else:\n        return X\n\n    object_columns = [\n        col for col in X_df.columns\n        if X_df[col].dtype == "object" or str(X_df[col].dtype).startswith("category") or str(X_df[col].dtype) == "bool"\n    ]\n    for col in X_df.columns:\n        if col not in object_columns:\n            X_df[col] = _autoresearch_pd.to_numeric(X_df[col], errors="coerce")\n\n    if object_columns:\n        print("Encoding categorical feature columns:", object_columns)\n        X_df = _autoresearch_pd.get_dummies(X_df, columns=object_columns, dummy_na=True)\n\n    X_df = X_df.replace([_autoresearch_np.inf, -_autoresearch_np.inf], _autoresearch_np.nan)\n    X_df = X_df.apply(_autoresearch_pd.to_numeric, errors="coerce")\n    X_df = X_df.fillna(0).astype(float)\n\n    if fit or _autoresearch_feature_columns is None:\n        _autoresearch_feature_columns = list(X_df.columns)\n    else:\n        X_df = X_df.reindex(columns=_autoresearch_feature_columns, fill_value=0)\n\n    return X_df\n\n\ndef _autoresearch_safe_fit_resample(sampler, X, y):\n    import pandas as _autoresearch_pd\n    try:\n        y_series = _autoresearch_pd.Series(y)\n        class_counts = y_series.value_counts(dropna=False)\n        print("Target class counts before resampling:", class_counts.to_dict())\n        if len(class_counts) < 2:\n            print("Skipping resampling because target has fewer than two classes.")\n            return X, y\n        min_count = int(class_counts.min())\n        if min_count < 2:\n            print("Skipping resampling because at least one target class has fewer than two samples.")\n            return X, y\n        return sampler.fit_resample(X, y)\n    except ValueError as exc:\n        if "needs to have more than 1 class" in str(exc) or "n_neighbors" in str(exc):\n            print(f"Skipping resampling after sampler validation error: {exc}")\n            return X, y\n        raise\n'
+            script = feature_helper + "\n" + script
     if "from exp.exp_main import Exp_Main" in script and ("exp.train(args)" in script or "exp.test(args)" in script):
         setting_line = (
             "        setting = f'{args.model_id}_{args.model}_{args.data}_ft{args.features}_"
