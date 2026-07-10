@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 
 from pathlib import Path
@@ -36,4 +37,16 @@ PAPER_REVIEW_PRINCIPAL_ID = os.getenv("PAPER_REVIEW_PRINCIPAL_ID", PRINCIPAL_ID)
 REPO_GRADER_PRINCIPAL_ID = os.getenv("REPO_GRADER_PRINCIPAL_ID", PRINCIPAL_ID)
 REPO_SELECTOR_PRINCIPAL_ID = os.getenv("REPO_SELECTOR_PRINCIPAL_ID", PRINCIPAL_ID)
 
-COLAB_EXECUTOR_URL = os.getenv("COLAB_EXECUTOR_URL", "")
+def normalize_url_env(value):
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    raw = raw.strip('\"\'').strip()
+    # Accept copied pyngrok output like: NgrokTunnel: "https://..." -> "http://localhost:5000"
+    match = re.search(r"https?://[^\s\"'<>\])]+", raw)
+    if match:
+        return match.group(0).rstrip("/.,")
+    return raw.rstrip("/")
+
+
+COLAB_EXECUTOR_URL = normalize_url_env(os.getenv("COLAB_EXECUTOR_URL", ""))
