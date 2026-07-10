@@ -142,10 +142,23 @@ export default function HistoryPage() {
               <div className="history-meta">
                 <div><strong>Saved:</strong> {new Date(selectedRun.saved_at).toLocaleString()}</div>
                 <div><strong>Topic:</strong> {selectedRun.summary?.topic || "Unknown"}</div>
+                {selectedRun.summary?.latest_session_id && (
+                  <div><strong>Session ID:</strong> <code>{selectedRun.summary.latest_session_id}</code></div>
+                )}
                 <div><strong>Repo:</strong> {selectedRun.summary?.selected_repo_url ? (
                   <a href={selectedRun.summary.selected_repo_url} target="_blank" rel="noreferrer">{selectedRun.summary.selected_repo_name || selectedRun.summary.selected_repo_url}</a>
                 ) : "Not selected"}</div>
               </div>
+
+              {selectedRun.session_ids?.length > 0 && (
+                <details className="history-stage">
+                  <summary>
+                    <span>agent sessions</span>
+                    <span className="history-badge">{selectedRun.session_ids.length}</span>
+                  </summary>
+                  <pre>{selectedRun.session_ids.map((entry) => entry.raw).join("\n")}</pre>
+                </details>
+              )}
 
               {selectedRun.summary?.errors?.length > 0 && (
                 <div className="history-errors">

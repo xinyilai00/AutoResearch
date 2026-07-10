@@ -308,6 +308,31 @@ def stage_error_summary(stage: str, text: str, status: str) -> str:
     return ""
 
 
+def read_session_log(run_dir: Path) -> tuple[str, list[dict]]:
+    path = run_dir / "session_ids.log"
+    if not path.exists():
+        return "", []
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    entries = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        label, _, rest = line.partition(":")
+        fields = {}
+        for part in rest.split(","):
+            key, _, value = part.strip().partition("=")
+            if key and value:
+                fields[key] = value
+        entries.append({
+            "label": label.strip(),
+            "request_id": fields.get("requestId", ""),
+            "session_id": fields.get("sessionId", ""),
+            "raw": line,
+        })
+    return text, entries
+
+
 def build_run_snapshot(state: PipelineState, label: str | None = None) -> dict:
     saved_at = datetime.now(timezone.utc).isoformat()
     metadata = state.state.get("metadata", {})
@@ -335,6 +360,12 @@ def build_run_snapshot(state: PipelineState, label: str | None = None) -> dict:
         if path.exists():
             experiment_logs[name] = path.read_text(encoding="utf-8", errors="replace")
 
+    session_log, session_entries = read_session_log(state.run_dir)
+    latest_session_id = next(
+        (entry["session_id"] for entry in reversed(session_entries) if entry.get("session_id")),
+        "",
+    )
+
     return {
         "id": saved_at.replace(":", "").replace(".", ""),
         "label": (label or metadata.get("topic") or "Untitled run").strip(),
@@ -346,10 +377,13 @@ def build_run_snapshot(state: PipelineState, label: str | None = None) -> dict:
             "selected_repo_url": metadata.get("selected_repo_url"),
             "stage_status": state.state.get("stage_status", {}),
             "errors": errors,
+            "latest_session_id": latest_session_id,
         },
         "metadata": metadata,
         "stages": stages,
         "experiment_logs": experiment_logs,
+        "session_log": session_log,
+        "session_ids": session_entries,
         "state": state.state,
         "output_store": state.output_store,
     }
@@ -367,6 +401,7 @@ def saved_run_summary(snapshot: dict) -> dict:
         "selected_repo_url": summary.get("selected_repo_url"),
         "stage_status": summary.get("stage_status", {}),
         "errors": summary.get("errors", []),
+        "latest_session_id": summary.get("latest_session_id", ""),
     }
 
 

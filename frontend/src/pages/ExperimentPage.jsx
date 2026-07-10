@@ -48,7 +48,13 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
         signal: abortControllerRef.current.signal,
       });
 
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Experiment server returned ${res.status} without JSON.`);
+      }
 
       if (!res.ok || data.status === "redesign_needed") {
         throw new Error(data.detail || data.output || "Experiment stage failed.");
@@ -58,7 +64,12 @@ export default function ExperimentPage({ autonomous, proposalOutput, experimentO
       onComplete(data.output || "");
       setDone(true);
     } catch (e) {
-      if (e.name !== "AbortError") setError(e.message);
+      if (e.name !== "AbortError") {
+        const message = e.message === "Load failed" || e instanceof TypeError
+          ? `Could not reach the experiment backend at ${API_BASE_URL}. Check that the server backend is running and reachable on port 8000.`
+          : e.message;
+        setError(message);
+      }
     } finally {
       setRunning(false);
     }
