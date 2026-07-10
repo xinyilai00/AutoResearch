@@ -482,7 +482,17 @@ def run_deep_literature_agent(papers_text: str, research_question: str) -> str:
     )
     data = response.json()
     request_id = data["data"]["requestId"]
+    session_id = data["data"].get("sessionId", "")
     print("Got requestId:", request_id)
+    print("Got sessionId:", session_id)
+    try:
+        from pathlib import Path
+        log_path = Path("paper_runs/latest/session_ids.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(f"Deep Literature: requestId={request_id}, sessionId={session_id}\n")
+    except Exception:
+        pass
     result = get_response(request_id)
     return replace_numeric_citation_markers(result, citation_lookup_from_papers_text(papers_text))
 

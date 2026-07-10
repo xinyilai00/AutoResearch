@@ -308,6 +308,27 @@ def stage_error_summary(stage: str, text: str, status: str) -> str:
     return ""
 
 
+def session_stage_for_label(label: str) -> str:
+    normalized = (label or "").strip().lower().replace("_", " ").replace("-", " ")
+    if not normalized:
+        return ""
+    if normalized.startswith("pi") or "principal investigator" in normalized:
+        return "pi"
+    if "lit review" in normalized or normalized in {"intro", "methodology", "results", "conclusion", "finalization", "planner"} or normalized.startswith(("intro ", "methodology ", "results ", "conclusion ", "finalization ", "planner ")):
+        return "paper"
+    if "deep literature" in normalized:
+        return "deep_literature"
+    if "literature" in normalized:
+        return "literature"
+    if "research question" in normalized:
+        return "research_questions"
+    if any(token in normalized for token in ("repo", "grader", "file selector", "file selection", "proposal")):
+        return "proposal"
+    if any(token in normalized for token in ("setuprevision", "setup revision", "resultsparser", "results parser", "experiment")):
+        return "experiment"
+    return ""
+
+
 def read_session_log(run_dir: Path) -> tuple[str, list[dict]]:
     path = run_dir / "session_ids.log"
     if not path.exists():
@@ -324,8 +345,10 @@ def read_session_log(run_dir: Path) -> tuple[str, list[dict]]:
             key, _, value = part.strip().partition("=")
             if key and value:
                 fields[key] = value
+        clean_label = label.strip()
         entries.append({
-            "label": label.strip(),
+            "label": clean_label,
+            "stage": session_stage_for_label(clean_label),
             "request_id": fields.get("requestId", ""),
             "session_id": fields.get("sessionId", ""),
             "raw": line,
@@ -361,6 +384,10 @@ def build_run_snapshot(state: PipelineState, label: str | None = None) -> dict:
             experiment_logs[name] = path.read_text(encoding="utf-8", errors="replace")
 
     session_log, session_entries = read_session_log(state.run_dir)
+    for stage in HISTORY_STAGES:
+        stages[stage]["session_ids"] = [
+            entry for entry in session_entries if entry.get("stage") == stage
+        ]
     latest_session_id = next(
         (entry["session_id"] for entry in reversed(session_entries) if entry.get("session_id")),
         "",

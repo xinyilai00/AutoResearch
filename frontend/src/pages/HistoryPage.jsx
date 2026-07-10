@@ -79,6 +79,24 @@ export default function HistoryPage() {
       .slice(0, 80) || "saved-run";
   }
 
+  function sessionStageForLabel(label) {
+    const normalized = (label || "").trim().toLowerCase().replaceAll("_", " ").replaceAll("-", " ");
+    if (!normalized) return "";
+    if (normalized.startsWith("pi") || normalized.includes("principal investigator")) return "pi";
+    if (normalized.includes("lit review") || ["intro", "methodology", "results", "conclusion", "finalization", "planner"].includes(normalized) || ["intro ", "methodology ", "results ", "conclusion ", "finalization ", "planner "].some((prefix) => normalized.startsWith(prefix))) return "paper";
+    if (normalized.includes("deep literature")) return "deep_literature";
+    if (normalized.includes("literature")) return "literature";
+    if (normalized.includes("research question")) return "research_questions";
+    if (["repo", "grader", "file selector", "file selection", "proposal"].some((token) => normalized.includes(token))) return "proposal";
+    if (["setuprevision", "setup revision", "resultsparser", "results parser", "experiment"].some((token) => normalized.includes(token))) return "experiment";
+    return "";
+  }
+
+  function stageSessionIds(stage, info) {
+    if (info?.session_ids?.length) return info.session_ids;
+    return (selectedRun?.session_ids || []).filter((entry) => (entry.stage || sessionStageForLabel(entry.label)) === stage);
+  }
+
   function downloadSelectedRunPaper() {
     if (!selectedRun) return;
     const paperOutput = selectedRun.stages?.paper?.output || "";
@@ -150,16 +168,6 @@ export default function HistoryPage() {
                 ) : "Not selected"}</div>
               </div>
 
-              {selectedRun.session_ids?.length > 0 && (
-                <details className="history-stage">
-                  <summary>
-                    <span>agent sessions</span>
-                    <span className="history-badge">{selectedRun.session_ids.length}</span>
-                  </summary>
-                  <pre>{selectedRun.session_ids.map((entry) => entry.raw).join("\n")}</pre>
-                </details>
-              )}
-
               {selectedRun.summary?.errors?.length > 0 && (
                 <div className="history-errors">
                   <h3>Errors / Could Not Run</h3>
@@ -172,16 +180,25 @@ export default function HistoryPage() {
               <div className="history-stage-grid">
                 {Object.entries(selectedRun.stages || {})
                   .filter(([stage]) => stage !== "review")
-                  .map(([stage, info]) => (
+                  .map(([stage, info]) => {
+                    const sessions = stageSessionIds(stage, info);
+                    return (
                   <details key={stage} className="history-stage">
                     <summary>
                       <span>{stage.replaceAll("_", " ")}</span>
                       <span className={info.error ? "history-badge failed" : "history-badge"}>{info.error ? "issue" : statusLabel(info.status)}</span>
                     </summary>
+                    {sessions.length > 0 && (
+                      <div className="history-stage-sessions">
+                        <strong>Session IDs</strong>
+                        <pre>{sessions.map((entry) => `${entry.label}: sessionId=${entry.session_id || "N/A"}, requestId=${entry.request_id || "N/A"}`).join("\n")}</pre>
+                      </div>
+                    )}
                     {info.error && <div className="history-error-row">{info.error}</div>}
                     <pre>{info.output || "No output saved for this stage."}</pre>
                   </details>
-                ))}
+                    );
+                })}
               </div>
 
               <div className="history-detail-footer">

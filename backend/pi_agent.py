@@ -99,7 +99,17 @@ You are generating search queries to support a benchmark-oriented study.
 
     data = response.json()
     request_id = data["data"]["requestId"]
+    session_id = data["data"].get("sessionId", "")
     print("Got requestId:", request_id)
+    print("Got sessionId:", session_id)
+    try:
+        from pathlib import Path
+        log_path = Path("paper_runs/latest/session_ids.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(f"PI: requestId={request_id}, sessionId={session_id}\n")
+    except Exception:
+        pass
 
     print("\n--- Agent Response ---")
     return get_response(request_id)
